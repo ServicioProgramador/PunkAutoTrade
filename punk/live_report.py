@@ -98,7 +98,7 @@ def report(store, start, end):
     trades = [t for t in closed_trades(store) if start <= t['closed_at'] < end]
     trades.sort(key=lambda t: t['closed_at'])
     total, gross_win, gross_loss = Decimal(0), Decimal(0), Decimal(0)
-    wins = losses = unknown = 0
+    wins = losses = draws = unknown = 0
     by_session = {c: {'label': labels[c], 'trades': 0, 'pnl': Decimal(0), 'wins': 0} for c in labels}
     by_session['NONE'] = {'label': 'Sin bolsa abierta', 'trades': 0, 'pnl': Decimal(0), 'wins': 0}
     by_symbol, by_exit, curve, exact = {}, {}, [], True
@@ -112,17 +112,25 @@ def report(store, start, end):
             unknown += 1
             continue
         total += pnl
+        # F63: a Break Even exit is a DRAW (it was protected at entry + fees), whatever the
+        # few cents of fees/slippage say. Money still counts in pnl and profit factor.
+        draw = (t.get('exit') == 'BE_STOP')
+        t['outcome'] = 'DRAW' if draw else ('WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'DRAW'))
         if pnl > 0:
-            wins += 1
             gross_win += pnl
         elif pnl < 0:
-            losses += 1
             gross_loss += -pnl
+        if t['outcome'] == 'WIN':
+            wins += 1
+        elif t['outcome'] == 'LOSS':
+            losses += 1
+        else:
+            draws += 1
         for c in (codes or ['NONE']):
             s = by_session[c]
             s['trades'] += 1
             s['pnl'] += pnl
-            s['wins'] += pnl > 0
+            s['wins'] += t['outcome'] == 'WIN'
         sym = by_symbol.setdefault(t['symbol'], {'trades': 0, 'pnl': Decimal(0)})
         sym['trades'] += 1
         sym['pnl'] += pnl
@@ -134,7 +142,7 @@ def report(store, start, end):
     def ser(d):
         return {k: {kk: (str(vv) if isinstance(vv, Decimal) else vv) for kk, vv in v.items()} for k, v in d.items()}
     return {'from': start, 'to': end, 'trades': trades, 'count': len(trades), 'with_pnl': len(trades) - unknown,
-            'unknown_pnl': unknown, 'pnl': str(total), 'wins': wins, 'losses': losses,
+            'unknown_pnl': unknown, 'pnl': str(total), 'wins': wins, 'losses': losses, 'draws': draws,
             'win_rate': str(round(Decimal(wins) / counted * 100, 1)) if counted else None,
             'profit_factor': str(round(gross_win / gross_loss, 2)) if gross_loss else None,
             'best': max((t['pnl'] for t in trades if _dec(t['pnl']) is not None), key=lambda x: Decimal(x), default=None),

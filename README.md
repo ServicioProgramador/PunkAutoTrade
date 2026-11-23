@@ -16,7 +16,7 @@ Canal de Telegram  →  lectura de la señal  →  validación y riesgo  →  or
 - **Entra a mercado o con orden límite** según qué tan cerca esté el precio de la entrada de la señal.
 - **El SL viaja pegado a la orden de entrada**: la posición nunca queda sin protección.
 - **Take Profit** en el último objetivo (modo `LAST`) o repartido en hasta 5 parciales (modo `SPLIT`).
-- **Break Even automático** al tocar el TP1 o con 1 % de movimiento a favor (20 % de ROI a x20). El SL pasa a la entrada más las comisiones.
+- **Break Even automático** al tocar el TP1 o con 1 % de movimiento a favor (20 % de ROI a x20). El SL pasa a la entrada más las comisiones ya pagadas (apertura y financiación, leídas de Bitunix), la comisión de cierre y una pequeña ganancia. Un cierre en Break Even cuenta como empate, no como pérdida.
 - **Lee los mensajes de seguimiento del canal** ("TP1 alcanzado", "mover a BE") y avisa si no coinciden con tu cuenta.
 - **Cantidad de operaciones según tu saldo**: abre tantas como permita el margen disponible.
 - **Notificaciones a tu Telegram personal** cuando abre, protege, mueve a BE o cierra.
@@ -56,6 +56,7 @@ Copiá `.env.example` a `.env` y completalo:
 | `PA_NOTIFY_BOT_TOKEN` / `PA_NOTIFY_CHAT_ID` | Opcional: avisos a tu Telegram mediante tu bot de @BotFather |
 | `PA_LIVE_FEE_RATE` | Opcional: comisión usada para el Break Even (por defecto 0.0006) |
 | `PA_LIVE_BE_MOVE_PCT` | Opcional: % de movimiento a favor que activa el Break Even (por defecto 1) |
+| `PA_LIVE_BE_PROFIT_PCT` | Opcional: ganancia extra que asegura el Break Even, sobre las comisiones (por defecto 0.1 %) |
 
 **El `.env` nunca se sube ni se comparte.** Ya está excluido en el `.gitignore`.
 

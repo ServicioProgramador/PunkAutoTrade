@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F62'
+BUILD = 'F63'
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
                       'SHADOW_ONLY'})
 # Known, reconciled-or-progressing states: they do NOT block new entries nor disarm the auto mode.
@@ -86,6 +86,12 @@ class LiveConfig:
         # BE trigger = favorable PRICE move from the average entry, in % (user rule:
         # 1% move == 1% x leverage ROI, e.g. 20% ROI at 20x), or TP1 touched.
         self.be_move_pct = D(over.get('be_move_pct', env('PA_LIVE_BE_MOVE_PCT', get('live_be_move_pct', '1'))))
+        # F63: extra profit locked by the BE stop, in % of price, ON TOP of the fees already
+        # paid (open fee + funding, read from Bitunix) and the estimated close fee.
+        self.be_profit_pct = D(over.get('be_profit_pct', env('PA_LIVE_BE_PROFIT_PCT', get('live_be_profit_pct', '0.1'))))
+        # F63: the BE stop triggers on LAST price (the initial SL keeps MARK price against wicks).
+        # LIVE evidence 2026-11-23: MARK-triggered BE stops filled several ticks below BE on fast dumps.
+        self.be_stop_type = str(over.get('be_stop_type', env('PA_LIVE_BE_STOP_TYPE', 'LAST_PRICE'))).upper()
         self.be_on_tp1 = str(over.get('be_on_tp1', get('live_be_on_tp1', 'YES'))).upper() == 'YES'
         self.limit_ttl = int(over.get('limit_ttl_seconds', get('live_limit_ttl_seconds', '7200')))
         self.plan_ttl = int(over.get('plan_ttl_seconds', 300))
@@ -99,6 +105,10 @@ class LiveConfig:
             raise LabBlocked('INVALID_FEE_RATE')
         if self.tp_mode not in ('SPLIT', 'LAST'):
             raise LabBlocked('INVALID_TP_MODE')
+        if not D('0') <= self.be_profit_pct <= D('2'):
+            raise LabBlocked('INVALID_BE_PROFIT_PCT')
+        if self.be_stop_type not in ('LAST_PRICE', 'MARK_PRICE'):
+            raise LabBlocked('INVALID_BE_STOP_TYPE')
 
     def public(self):
         return {k: str(v) for k, v in vars(self).items()}
@@ -839,6 +849,32 @@ class LiveExecutor:
         except TimeoutError as exc:
             self.store.event(cid, 'PROTECTION_GET_UNAVAILABLE', {'reason': str(exc)[:80]})
 
+    def _be_target(self, raw, avg, qty, long, tick):
+        """F63 BE price that closes in PROFIT, not at zero.
+
+        Covers, per unit of the open quantity:
+          * what Bitunix already charged on this position (realizedPNL < 0: open fee + funding),
+            or the estimated open fee when Bitunix does not report it;
+          * the estimated close fee (fee_rate on the BE price);
+          * be_profit_pct of extra profit.
+        Rounded AWAY from the entry so the cover is never lost to the tick."""
+        fee = self.config.fee_rate
+        paid, source = None, 'ESTIMATED'
+        try:
+            realized = Decimal(str(raw.get('realizedPNL')))
+            if realized.is_finite():
+                paid, source = max(Decimal(0), -realized), 'BITUNIX_REALIZED'
+        except (InvalidOperation, ValueError, TypeError):
+            pass
+        if paid is None:
+            paid = avg * qty * fee
+        per_unit = paid / qty + avg * fee + avg * self.config.be_profit_pct / 100
+        raw_be = avg + per_unit if long else avg - per_unit
+        be = D(quantize(raw_be, tick, ROUND_CEILING if long else ROUND_FLOOR))
+        return be, {'paid_usdt': canon(paid), 'paid_source': source, 'close_fee_rate': canon(fee),
+                    'profit_pct': canon(self.config.be_profit_pct), 'stop_type': self.config.be_stop_type,
+                    'expected_net_usdt': canon((abs(be - avg) - avg * fee) * qty - paid)}
+
     def _supervise(self, row, plan):
         cid = row['client_id']
         mode = self._tp_mode(row, plan)
@@ -885,8 +921,8 @@ class LiveExecutor:
             or channel_req
         if not trigger:
             return
-        tick, fee = D(plan['tick']), self.config.fee_rate
-        be = D(quantize(avg * (1 + 2 * fee) if long else avg * (1 - 2 * fee), tick, ROUND_CEILING if long else ROUND_FLOOR))
+        tick = D(plan['tick'])
+        be, be_parts = self._be_target(raw, avg, qty_now, long, tick)
         entry = D(pintent.entry)
         be = max(be, entry) if long else min(be, entry)
         feasible = mark > be + tick if long else mark < be - tick
@@ -898,6 +934,7 @@ class LiveExecutor:
             self.store.event(cid, 'BE_WAITING_PRICE', {'roi_pct': canon(roi), 'be': canon(be), 'mark_est': canon(mark)})
             return
         be_txt, rem_txt = canon(be), canon(qty_now)
+        port.stop_type = self.config.be_stop_type
         if row['state'] == 'BE_UNKNOWN':
             r = self.cycle.reconcile_unknown(pintent, port, tp_quantities=tuple(protection_split(plan, row['filled_qty'], mode)[1]),
                                              be_price=row['be_price'] or be_txt, remaining_qty=rem_txt)
@@ -907,7 +944,8 @@ class LiveExecutor:
         self.store.transition(cid, ('PROTECTED',), 'BE_UNKNOWN', be_price=be_txt,
                               detail={'trigger': 'TP1_FILL' if tp1_hit else ('TP1_TOUCH' if tp1_touched else
                                                   ('MOVE_PCT' if move_pct >= self.config.be_move_pct else 'CHANNEL')),
-                                      'move_pct': canon(move_pct), 'roi_pct': canon(roi), 'mark_est': canon(mark)})
+                                      'move_pct': canon(move_pct), 'roi_pct': canon(roi), 'mark_est': canon(mark),
+                                      'be': be_parts})
         try:
             r = self.cycle.move_be(pintent, port, price=be_txt, remaining_qty=rem_txt, trigger_verified=True)
         except (LabBlocked, TimeoutError) as exc:
@@ -1007,7 +1045,7 @@ def dashboard_payload(live):
     store = live.store if hasattr(live, 'store') else live
     from datetime import datetime, timezone
     day0 = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-    trades, pnl_today, closed_today, wins, losses = [], Decimal(0), 0, 0, 0
+    trades, pnl_today, closed_today, wins, losses, draws = [], Decimal(0), 0, 0, 0, 0
     for i, r in enumerate(store.all(60)):
         plan = json.loads(r['plan'])
         events = store.events(r['client_id'], 40) if i < 25 else []
@@ -1026,8 +1064,11 @@ def dashboard_payload(live):
                     try:
                         pnl = Decimal(str(close.get('realizedPNL')))
                         pnl_today += pnl
-                        wins += pnl > 0
-                        losses += pnl < 0
+                        if close.get('exit') == 'BE_STOP':
+                            draws += 1      # F63: a Break Even close is a draw, not a loss
+                        else:
+                            wins += pnl > 0
+                            losses += pnl < 0
                     except (InvalidOperation, ValueError, TypeError):
                         pass
                 break
@@ -1046,4 +1087,4 @@ def dashboard_payload(live):
     return {'build': BUILD, 'status': 'OK', 'supervised': hasattr(live, 'reconcile_all'),
             'trades': trades, 'blocking': [r['client_id'] for r in store.blocking()],
             'summary': {'active': len(active), 'closed_today': closed_today, 'pnl_today': str(pnl_today),
-                        'wins_today': wins, 'losses_today': losses}}
+                        'wins_today': wins, 'losses_today': losses, 'draws_today': draws}}
