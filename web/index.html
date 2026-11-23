@@ -1,0 +1,286 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Punk AutoTrade</title><style>
+:root{--bg:#0a0f1a;--panel:#111a2b;--panel2:#16223a;--line:#22324d;--text:#e8eef8;--muted:#8fa3bf;--green:#22c55e;--green2:#0f3d24;--red:#f05252;--red2:#46161b;--amber:#f5a524;--amber2:#3d2d0c;--blue:#5aa2ff;--blue2:#11294a;--violet:#a78bfa;font-family:Inter,system-ui,Segoe UI,sans-serif;color:var(--text);background:var(--bg);color-scheme:dark}
+*{box-sizing:border-box}body{margin:0 auto;width:min(100%,1880px);padding:18px clamp(12px,2.3vw,38px) 40px;background:radial-gradient(1200px 500px at 10% -10%,#16264a55,transparent),var(--bg)}
+h1{margin:0;font-size:clamp(22px,2vw,28px);letter-spacing:-.3px}h2{font-size:15px;margin:0 0 12px;color:#cfe0f5;font-weight:650}p{margin:6px 0;color:var(--muted)}small,.muted{color:var(--muted);font-size:12px}
+header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}.brand{display:flex;gap:12px;align-items:center}.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#5aa2ff,#a78bfa);display:grid;place-items:center;font-weight:800;color:#0a0f1a}
+.sub{font-size:12px;color:var(--muted)}.pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:650;border:1px solid var(--line);background:var(--panel)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}.dot.on{background:var(--green);box-shadow:0 0 0 0 #22c55e88;animation:pulse 1.8s infinite}.dot.warn{background:var(--amber)}.dot.off{background:#566a85}.dot.bad{background:var(--red)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #22c55e88}70%{box-shadow:0 0 0 9px #22c55e00}100%{box-shadow:0 0 0 0 #22c55e00}}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px}.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0}.kpi .label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px}.kpi .value{font-size:22px;font-weight:750;margin-top:6px;overflow-wrap:anywhere}.kpi .hint{font-size:12px;color:var(--muted);margin-top:4px}
+.pos{color:var(--green)}.neg{color:var(--red)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 14px;padding:5px;background:var(--panel);border:1px solid var(--line);border-radius:12px;width:max-content;max-width:100%}.tab{background:transparent;border:0;color:var(--muted);padding:9px 14px;border-radius:9px;cursor:pointer;font:600 13px Inter,system-ui,sans-serif;display:flex;gap:7px;align-items:center}.tab:hover{color:var(--text);background:#ffffff08}.tab[aria-selected="true"]{background:var(--blue2);color:#fff}.tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.badge{background:var(--red);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px}
+.tabpanel[hidden]{display:none!important}.tabpanel{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;align-content:start}.span-12{grid-column:span 12}.span-8{grid-column:span 8}.span-7{grid-column:span 7}.span-6{grid-column:span 6}.span-5{grid-column:span 5}.span-4{grid-column:span 4}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}.card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:border-color .15s,transform .15s}.card:hover{border-color:#3b5a85;transform:translateY(-1px)}
+.card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}.sym{font-size:17px;font-weight:750}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chip{font-size:11.5px;font-weight:650;padding:3px 9px;border-radius:999px;background:#ffffff0d;color:#cfe0f5;white-space:nowrap}.chip.long{background:var(--green2);color:#86efac}.chip.short{background:var(--red2);color:#fca5a5}.chip.ok{background:var(--green2);color:#86efac}.chip.warn{background:var(--amber2);color:#fcd34d}.chip.bad{background:var(--red2);color:#fca5a5}.chip.info{background:var(--blue2);color:#9cc8ff}.chip.dim{background:#ffffff0a;color:var(--muted)}
+.pnl{font-size:20px;font-weight:750;text-align:right}.pnl small{display:block;font-size:12px;font-weight:600}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.grid3 div{font-size:12px;color:var(--muted)}.grid3 b{display:block;color:var(--text);font-size:13.5px;margin-top:2px}
+.bar{position:relative;height:8px;border-radius:99px;margin:26px 10px 34px;background:linear-gradient(90deg,var(--red) 0%,#3a4a63 50%,var(--green) 100%)}.mk{position:absolute;top:-6px;width:3px;height:20px;border-radius:2px;background:#fff;transform:translateX(-50%)}.mk.entry{background:#cbd5e1}.mk.be{background:var(--amber)}.mk.be span{top:-20px;color:var(--amber)}.mk.now{background:var(--blue);width:12px;height:12px;top:-2px;border-radius:50%;border:2px solid #0a0f1a}.mk span{position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:10.5px;color:var(--muted);white-space:nowrap}.mk.now span{top:-20px;color:#9cc8ff}
+.empty{padding:28px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px}
+.table-wrap{overflow:auto;max-width:100%}table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;border-bottom:1px solid var(--line);padding:10px 9px;white-space:nowrap}th{color:var(--muted);font-weight:600;font-size:12px}tbody tr{cursor:default}tbody tr.click{cursor:pointer}tbody tr:hover{background:#ffffff06}
+.feed{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto}.feed-item{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:10px;background:var(--panel2)}.feed-item .t{font-size:11.5px;color:var(--muted);min-width:56px}.feed-item .d{font-size:13px;overflow-wrap:anywhere}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.fbtn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:999px;cursor:pointer;font-size:12.5px}.fbtn.active{background:var(--blue2);color:#fff;border-color:#2d5a92}
+.btn{padding:10px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;font-weight:650;font-size:13px}.btn.primary{background:#1d4ed8;border-color:#3b6ff0}.btn.danger{background:#7f1d1d;border-color:#b91c1c}.btn:disabled{opacity:.45;cursor:not-allowed}
+.config-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:end}.config-form label{font-size:13px;color:#c8d9ee;display:grid;gap:7px}.config-form input,.config-form select{width:100%;padding:11px;background:#0b1424;color:#edf4ff;border:1px solid #30486a;border-radius:9px;font:inherit}
+.metric-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.metric{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px}.metric b{display:block;font-size:18px;margin-top:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px}.kv span:nth-child(odd){color:var(--muted)}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}.check{display:flex;gap:10px;align-items:center;background:var(--panel2);border-radius:10px;padding:11px 12px;font-size:13px}
+details{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}summary{cursor:pointer;font-weight:650;color:#cfe0f5}
+.drawer{position:fixed;inset:0 0 0 auto;width:min(460px,100%);background:#0d1626;border-left:1px solid var(--line);box-shadow:-20px 0 50px #0008;transform:translateX(105%);transition:transform .2s;z-index:30;padding:20px;overflow:auto}.drawer.open{transform:none}.drawer .close{float:right}
+.tl{border-left:2px solid var(--line);margin:14px 0 0 6px;padding-left:16px}.tl div{position:relative;padding:6px 0;font-size:13px}.tl div:before{content:"";position:absolute;left:-22px;top:11px;width:10px;height:10px;border-radius:50%;background:var(--blue)}.tl small{display:block}
+.modal-bg{position:fixed;inset:0;background:#000a;display:none;place-items:center;z-index:40}.modal-bg.open{display:grid}.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(420px,92%)}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:50}.toast{background:#13233d;border:1px solid #2d4f7d;border-radius:12px;padding:12px 14px;font-size:13px;box-shadow:0 10px 30px #0007;animation:in .25s}@keyframes in{from{opacity:0;transform:translateY(8px)}}
+.foot{margin-top:18px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+@media(max-width:1200px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1050px){.span-8,.span-7,.span-6,.span-5,.span-4{grid-column:span 12}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){body{padding:12px}.kpis{grid-template-columns:1fr 1fr;gap:8px}.kpi .value{font-size:18px}.tab{flex:1 1 40%;justify-content:center}.config-form,.metric-row{grid-template-columns:1fr}.cards{grid-template-columns:1fr}}
+</style></head><body>
+<header>
+ <div class="brand"><div class="logo">P</div><div><h1>Punk AutoTrade</h1><div class="sub">Señales de Punkchainer VIP ejecutadas en Bitunix Futures · versión <span id="build">F62</span><!-- F5 baseline regression marker --></div></div></div>
+ <div style="display:flex;gap:10px;flex-wrap:wrap"><span class="pill"><span class="dot" id="pill-dot"></span><span id="pill">Cargando…</span></span><span class="pill" title="Bolsas abiertas ahora (horario local de cada una, lunes a viernes)">🌐 <span id="markets">-</span></span><span class="pill"><span class="sub" id="updated">-</span></span></div>
+</header>
+
+<div class="kpis" aria-label="Estado operativo">
+ <div class="kpi"><div class="label">Saldo disponible en Bitunix</div><div class="value" id="bxavailable">-</div><div class="hint" id="ex">-</div></div>
+ <div class="kpi"><div class="label">Resultado abierto</div><div class="value" id="k-upnl">-</div><div class="hint" id="k-upnl-hint">sin posiciones</div></div>
+ <div class="kpi"><div class="label">Resultado de hoy</div><div class="value" id="k-today">-</div><div class="hint" id="k-today-hint">-</div></div>
+ <div class="kpi"><div class="label"><span class="dot" id="auto-dot"></span>Automático</div><div class="value" id="auto">-</div><div class="hint" id="k-auto-hint">-</div></div>
+ <div class="kpi"><div class="label"><span class="dot" id="tg-dot"></span>Telegram</div><div class="value" id="tg">-</div><div class="hint" id="tgactivity">Sin mensajes nuevos</div></div>
+</div>
+
+<nav class="tabs" role="tablist" aria-label="Secciones">
+<button type="button" class="tab" role="tab" id="tab-resumen" aria-controls="panel-resumen" aria-selected="true" tabindex="0" data-tab="resumen">Panel</button>
+<button type="button" class="tab" role="tab" id="tab-operaciones" aria-controls="panel-operaciones" aria-selected="false" tabindex="-1" data-tab="operaciones">Operaciones <span class="badge" id="badge-review" hidden>0</span></button>
+<button type="button" class="tab" role="tab" id="tab-resultados" aria-controls="panel-resultados" aria-selected="false" tabindex="-1" data-tab="resultados">Resultados</button>
+<button type="button" class="tab" role="tab" id="tab-telegram" aria-controls="panel-telegram" aria-selected="false" tabindex="-1" data-tab="telegram">Señales</button>
+<button type="button" class="tab" role="tab" id="tab-mercado" aria-controls="panel-mercado" aria-selected="false" tabindex="-1" data-tab="mercado">Cuenta Bitunix</button>
+<button type="button" class="tab" role="tab" id="tab-live" aria-controls="panel-live" aria-selected="false" tabindex="-1" data-tab="live">Automático</button>
+<button type="button" class="tab" role="tab" id="tab-config" aria-controls="panel-config" aria-selected="false" tabindex="-1" data-tab="config">Configuración</button>
+<button type="button" class="tab" role="tab" id="tab-sistema" aria-controls="panel-sistema" aria-selected="false" tabindex="-1" data-tab="sistema">Sistema</button>
+</nav>
+<main>
+
+<div class="tabpanel" id="panel-resumen" role="tabpanel" aria-labelledby="tab-resumen" data-panel="resumen">
+ <section class="span-8"><h2>Posiciones abiertas</h2><div class="cards" id="open-cards"><div class="empty">Sin posiciones abiertas.</div></div></section>
+ <section class="span-4"><h2>Actividad reciente</h2><div class="feed" id="feed"><div class="empty">Sin actividad todavía.</div></div></section>
+ <section class="span-12"><h2>Últimas operaciones cerradas</h2><div class="table-wrap"><table><thead><tr><th>Cierre</th><th>Par</th><th>Dirección</th><th>Entrada</th><th>Salida</th><th>Resultado</th><th>Cómo cerró</th></tr></thead><tbody id="closed-rows"></tbody></table></div></section>
+</div>
+
+<div class="tabpanel" id="panel-operaciones" role="tabpanel" aria-labelledby="tab-operaciones" data-panel="operaciones" hidden>
+ <section class="span-12"><h2>Operaciones reales</h2>
+  <div class="filters" id="op-filters"><button class="fbtn active" data-f="all">Todas</button><button class="fbtn" data-f="open">Abiertas</button><button class="fbtn" data-f="closed">Cerradas</button><button class="fbtn" data-f="review">A revisar</button><button class="fbtn" data-f="other">No ejecutadas</button></div>
+  <p class="muted" id="live-summary">-</p>
+  <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Par</th><th>Dirección</th><th>Origen</th><th>Estado</th><th>Entrada</th><th>SL</th><th>TP</th><th>Cantidad</th><th>Apal.</th><th>Break Even</th><th>Resultado</th></tr></thead><tbody id="live-trades"></tbody></table></div>
+  <small>Tocá una fila para ver su historia paso a paso.</small></section>
+</div>
+
+<div class="tabpanel" id="panel-resultados" role="tabpanel" aria-labelledby="tab-resultados" data-panel="resultados" hidden>
+ <section class="span-12"><div class="filters" id="rep-filters" style="align-items:center"><button class="fbtn active" data-r="today">Hoy</button><button class="fbtn" data-r="1">24 h</button><button class="fbtn" data-r="5">5 días</button><button class="fbtn" data-r="7">7 días</button><button class="fbtn" data-r="30">1 mes</button><button class="fbtn" data-r="custom">Personalizado</button><span id="rep-custom" style="display:none;gap:6px;align-items:center"><input type="date" id="rep-from" class="fbtn"> a <input type="date" id="rep-to" class="fbtn"><button class="fbtn" id="rep-apply">Aplicar</button></span></div>
+ <div class="metric-row" style="grid-template-columns:repeat(6,minmax(0,1fr))"><div class="metric"><small>Resultado</small><b id="rep-pnl">-</b></div><div class="metric"><small>Operaciones</small><b id="rep-count">-</b></div><div class="metric"><small>Ganadas / perdidas</small><b id="rep-wl">-</b></div><div class="metric"><small>% de acierto</small><b id="rep-wr">-</b></div><div class="metric"><small>Factor de beneficio</small><b id="rep-pf">-</b></div><div class="metric"><small>Mejor / peor</small><b id="rep-bw">-</b></div></div>
+ <div id="rep-chart" style="margin-top:14px"></div><p class="muted" id="rep-note"></p></section>
+ <section class="span-4"><h2>Por sesión de mercado</h2><div class="table-wrap"><table><thead><tr><th>Sesión al abrir</th><th>Oper.</th><th>Aciertos</th><th>Resultado</th></tr></thead><tbody id="rep-sessions"></tbody></table></div><small>Sesión = bolsa abierta cuando se abrió la operación (horario local de cada bolsa, lunes a viernes).</small></section>
+ <section class="span-4"><h2>Por par</h2><div class="table-wrap"><table><thead><tr><th>Par</th><th>Oper.</th><th>Resultado</th></tr></thead><tbody id="rep-symbols"></tbody></table></div></section>
+ <section class="span-4"><h2>Cómo cerraron</h2><div class="table-wrap"><table><thead><tr><th>Salida</th><th>Oper.</th><th>Resultado</th></tr></thead><tbody id="rep-exits"></tbody></table></div></section>
+ <section class="span-12"><h2>Detalle</h2><div class="table-wrap"><table><thead><tr><th>Apertura</th><th>Cierre</th><th>Par</th><th>Dirección</th><th>Sesión</th><th>Entrada</th><th>Salida</th><th>Cómo cerró</th><th>Resultado</th></tr></thead><tbody id="rep-trades"></tbody></table></div></section>
+</div>
+
+<div class="tabpanel" id="panel-telegram" role="tabpanel" aria-labelledby="tab-telegram" data-panel="telegram" hidden>
+ <section class="span-12"><h2>Mensajes del canal</h2>
+  <div class="filters" id="tg-filters"><button class="fbtn active" data-f="sig">Solo señales</button><button class="fbtn" data-f="all">Todos los mensajes</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Hora</th><th>Mensaje</th><th>Tipo</th><th>Detalle</th><th>Qué hizo el bot</th></tr></thead><tbody id="events"></tbody></table></div>
+  <small>Solo se procesan mensajes nuevos del canal autorizado. El historial nunca se ejecuta.</small></section>
+</div>
+
+<div class="tabpanel" id="panel-mercado" role="tabpanel" aria-labelledby="tab-mercado" data-panel="mercado" hidden>
+ <section class="span-4"><h2>Cuenta</h2><div class="kv"><span>Conexión</span><b id="bxstatus">-</b><span>Disponible</span><b id="bx-av2">-</b><span>Margen en uso</span><b id="bx-margin">-</b><span>Posiciones</span><b id="bxpositions">-</b><span>Órdenes pendientes</span><b id="bxorders">-</b><span>Protecciones activas</span><b id="bxtpsl">-</b></div><p class="muted" style="margin-top:12px">Lectura directa de Bitunix cada 30 segundos.</p></section>
+ <section class="span-8"><h2>Posiciones en Bitunix</h2><div class="table-wrap"><table><thead><tr><th>Par</th><th>Dirección</th><th>Cantidad</th><th>Precio medio</th><th>Margen</th><th>Apal.</th><th>Resultado</th><th>SL</th><th>TP</th><th>Gestión</th></tr></thead><tbody id="bx-positions"></tbody></table></div></section>
+</div>
+
+<div class="tabpanel" id="panel-live" role="tabpanel" aria-labelledby="tab-live" data-panel="live" hidden>
+ <section class="span-5"><h2>Estado del automático</h2>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><span class="dot" id="auto-dot2" style="width:14px;height:14px"></span><b id="auto-state" style="font-size:20px">-</b></div>
+  <div class="kv" id="auto-kv"></div>
+  <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap"><button type="button" class="btn danger" id="auto-disarm">Desarmar automático</button></div>
+  <p class="muted" style="margin-top:12px">Desarmar detiene las entradas nuevas. Las posiciones abiertas siguen protegidas. Para armar usá la consola: <code>python run.py --live-arm LIVE</code></p>
+ </section>
+ <section class="span-7"><h2>Decisiones del automático</h2><div class="feed" id="auto-log"><div class="empty">Sin decisiones todavía.</div></div></section>
+</div>
+
+<div class="tabpanel" id="panel-config" role="tabpanel" aria-labelledby="tab-config" data-panel="config" hidden>
+ <section class="span-7"><h2>Capital y riesgo</h2>
+ <form id="config-form" class="config-form" autocomplete="off">
+ <label>Margen por operación (USDT)<input id="cfg-margin" type="number" min="0.01" max="100000" step="0.01" required></label>
+ <label>Apalancamiento por defecto (si la señal no lo indica)<input id="cfg-leverage" type="number" min="3" max="200" step="1" required></label>
+ <label>Máximo de posiciones a la vez<input id="cfg-max" type="number" min="1" max="100" step="1" required></label>
+ <label>Exposición máxima total (USDT)<input id="cfg-exposure" type="number" min="1" max="10000000" step="0.01" required></label>
+ <label>Pérdida máxima aceptada por SL (USDT)<input id="cfg-loss" type="number" min="0.01" max="100000" step="0.01" required></label>
+ <label>Saldo de referencia para la simulación<select id="cfg-basis"><option value="PAPER">Saldo simulado</option><option value="BITUNIX_GET_ONLY">Saldo real de Bitunix</option></select></label>
+ <button class="btn primary" type="submit">Guardar</button><p id="cfg-result" role="status" aria-live="polite"></p></form>
+ <small>Se aplica a las próximas operaciones reales y simuladas. El apalancamiento siempre se limita al máximo del contrato.</small></section>
+ <section class="span-5"><h2>Capacidad</h2><div class="metric-row"><div class="metric"><small>Margen por entrada</small><b id="cfg-effective-margin">-</b></div><div class="metric"><small>Disponible</small><b id="cfg-available">-</b></div><div class="metric"><small>Operaciones posibles</small><b id="cfg-capacity">-</b></div></div><p class="muted" id="cfg-message" style="margin-top:12px">-</p><small>Ejemplo: con 18 USDT y 5 por operación entran 3 operaciones. Las comisiones y los límites pueden reducirlo.</small></section>
+</div>
+
+<div class="tabpanel" id="panel-sistema" role="tabpanel" aria-labelledby="tab-sistema" data-panel="sistema" hidden>
+ <section class="span-12"><h2>Componentes</h2><div class="checks" id="live-checks"><div class="check">Consultando…</div></div></section>
+ <section class="span-12"><details><summary>Simulación (opcional, no opera dinero real)</summary>
+  <p class="muted">Réplica simulada de las señales para comparar. No afecta a Bitunix. Saldo simulado: <b id="balance">-</b> · Simulación activa: <b id="ex-paper">-</b></p>
+  <p class="muted">Precios observados: <span id="marketstatus">-</span></p><div class="table-wrap"><table><thead><tr><th>Par</th><th>Último precio</th></tr></thead><tbody id="marketprices"></tbody></table></div>
+  <h2 style="margin-top:14px">Posiciones simuladas</h2><div class="table-wrap"><table><thead><tr><th>Señal</th><th>Par</th><th>Dirección</th><th>Entrada</th><th>SL</th><th>Cantidad</th><th>Estado</th><th>BE</th></tr></thead><tbody id="trades"></tbody></table></div>
+  <h2 style="margin-top:14px">Entradas límite simuladas</h2><div class="table-wrap"><table><thead><tr><th>Señal</th><th>Par</th><th>Dirección</th><th>Precio</th><th>Estado</th><th>Vence</th></tr></thead><tbody id="pendinglimits"></tbody></table></div>
+ </details></section>
+</div>
+</main>
+<div class="foot"><span>Las entradas reales solo ocurren con el automático armado o con aprobación manual por consola.</span><span id="foot-right">-</span></div>
+
+<aside class="drawer" id="drawer" aria-hidden="true"><button class="btn close" id="drawer-close">Cerrar</button><div id="drawer-body"></div></aside>
+<div class="modal-bg" id="modal"><div class="modal"><h2>¿Desarmar el automático?</h2><p>No se abrirán operaciones nuevas desde Telegram. Las posiciones abiertas siguen protegidas por el supervisor.</p><div class="actions"><button class="btn" id="modal-no">Cancelar</button><button class="btn danger" id="modal-yes">Desarmar</button></div></div></div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const nf=(v,d=2)=>{const n=Number(v);return isFinite(n)?n.toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}):'-'};
+const px=v=>{const n=Number(v);if(!isFinite(n))return '-';return n.toLocaleString('es-AR',{maximumFractionDigits:n<1?6:(n<100?4:2)})};
+const usd=v=>{const n=Number(v);return isFinite(n)?(n>0?'+':'')+nf(n,2)+' USDT':'-'};
+const cls=v=>Number(v)>0?'pos':(Number(v)<0?'neg':'');
+const time=s=>s?new Date(s*1000).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}):'-';
+const dt=s=>s?new Date(s*1000).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';
+const isoTime=s=>{try{return new Date(s).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}catch(_){return '-'}};
+const human=t=>{if(t===null||t===undefined||t==='')return '';t=String(t);return t.includes('_')?(t.charAt(0)+t.slice(1).toLowerCase()).replaceAll('_',' '):t};
+const STATE={PLANNED:['Planificada','dim'],APPROVED:['Aprobada','info'],ENTRY_ARMED:['Enviando entrada','warn'],ENTRY_ACK:['Entrada aceptada','info'],ENTRY_UNKNOWN:['Entrada sin confirmar','bad'],ENTRY_REJECTED_UNCONFIRMED:['Entrada rechazada','bad'],ENTRY_PENDING:['Orden límite esperando','info'],ENTRY_PARTIAL:['Ejecución parcial','warn'],CANCEL_REQUESTED:['Cancelando','warn'],PROTECTING:['Colocando SL y TP','warn'],PROTECTION_REVIEW:['Protección a revisar','bad'],PROTECTED:['Protegida','ok'],BE_UNKNOWN:['Moviendo a Break Even','warn'],BE_CONFIRMED:['Protegida en Break Even','ok'],EMERGENCY_CLOSE_SENT:['Cierre de emergencia','bad'],REVIEW:['A revisar','bad'],CLOSED:['Cerrada','dim'],CANCELED:['Cancelada','dim'],REJECTED_RESOLVED:['Rechazada','dim'],ABORTED_BEFORE_ENTRY:['Abortada sin entrar','dim'],PLAN_EXPIRED:['Plan vencido','dim'],SHADOW_ONLY:['Simulada (sombra)','dim']};
+const OPEN=['ENTRY_PENDING','ENTRY_ACK','ENTRY_PARTIAL','PROTECTING','PROTECTED','BE_UNKNOWN','BE_CONFIRMED','PROTECTION_REVIEW','ENTRY_UNKNOWN','ENTRY_ARMED','CANCEL_REQUESTED','EMERGENCY_CLOSE_SENT','REVIEW'];
+const NOT_EXEC=['PLANNED','APPROVED','PLAN_EXPIRED','SHADOW_ONLY','ABORTED_BEFORE_ENTRY','REJECTED_RESOLVED','CANCELED'];
+const EXIT={TP_LAST:['Take Profit','ok'],BE_STOP:['Break Even','info'],SL:['Stop Loss','bad'],OTHER:['Otro','dim'],UNKNOWN:['Sin dato','dim']};
+const REASON={POSITION_ABSENT_GET:'La posición ya no está abierta en Bitunix',F54_POSITION_NOT_CONFIRMED:'No se pudo confirmar la posición',INSUFFICIENT_AVAILABLE_MARGIN:'Margen insuficiente',LEVELS_INVALID_FOR_CURRENT_PRICE:'El precio ya pasó la entrada o el TP1',SYMBOL_ALREADY_EXPOSED:'Ya hay una posición en ese par',SL_LOSS_ABOVE_LIMIT:'La pérdida por SL supera tu límite',MAX_POSITIONS_REACHED:'Límite de posiciones alcanzado',MAX_EXPOSURE_REACHED:'Exposición máxima alcanzada',MARGIN_MODE_NOT_ISOLATION:'El par está en margen cruzado',CONTRACT_NOT_OPEN:'Par no disponible en Bitunix',QTY_BELOW_CONTRACT_MINIMUM:'Cantidad menor al mínimo del par',PRICE_MOVED_SINCE_PLAN:'El precio se movió demasiado',BLOCKED_BY_UNRECONCILED:'Hay una operación a revisar',TICKER_UNAVAILABLE:'Sin precio del par',POSITION_TIER_UNVERIFIED:'No se pudo verificar el apalancamiento',LIMIT_TTL_EXPIRED:'La orden límite venció',ORDER_CANCELED_NO_FILL:'Orden cancelada sin ejecutarse',OPERATOR_RESOLVED_GET_NO_EXPOSURE:'Resuelta: sin exposición',STOP_LOST_WITH_OPEN_POSITION:'Posición abierta sin SL',SHADOW_MODE:'Modo sombra'};
+const reason=r=>{if(!r)return '';const k=String(r).split(':')[0];return REASON[k]||human(k)};
+const DEC={ARMED_LIVE:['Automático armado','ok'],ARMED_SHADOW:['Modo sombra activado','info'],ARMED_OFF:['Automático apagado','dim'],DISARMED:['Automático desarmado','bad'],LIVE_SENT:['Operación abierta','ok'],SHADOW_PLANNED:['Habría operado (sombra)','info'],EDIT_IGNORED:['Edición ignorada','dim'],SIGNAL_TOO_OLD:['Señal vieja, ignorada','dim'],NOT_A_SIGNAL:['Mensaje sin señal completa','dim'],ALREADY_HANDLED:['Ya procesada','dim'],AUTO_OFF_SIGNAL:['No abierta: automático desarmado','warn'],CHANNEL_BE_APPLIED:['Canal: TP tocado · SL movido a BE','ok'],CHANNEL_BE_PENDING:['Canal: TP tocado · BE en espera de precio','info'],CHANNEL_BE_ALREADY:['Canal: TP tocado · ya estaba en BE','dim'],CHANNEL_TP_HIT:['Canal: TP tocado','dim'],CHANNEL_MATCH:['Canal coincide con tu cuenta','ok'],CHANNEL_MISMATCH:['Canal NO coincide: revisar','bad'],CHANNEL_NO_TRADE:['Seguimiento sin operación tuya','dim'],CHANNEL_CORRECTION:['Corrección del canal','warn'],BLOCKED_BY_UNRECONCILED:['Bloqueada: hay algo a revisar','bad'],MAX_OPEN_REACHED:['No abierta: límite de posiciones','warn'],MAX_PER_DAY_REACHED:['No abierta: límite diario','warn'],PLAN_REFUSED:['No abierta','warn'],EXECUTE_REFUSED:['No abierta al ejecutar','warn'],QUEUE_FULL_IGNORED:['Cola llena','bad'],WORKER_ERROR:['Error interno','bad']};
+const EVT={CHANNEL_BE_REQUESTED:'El canal pidió mover el SL a BE',POSITION_NOT_VISIBLE_YET:'Esperando que Bitunix muestre la posición',ORDER_LOOKUP_NOT_CONFIRMED:'Orden todavía no visible en Bitunix',PLANNED:'Plan calculado',APPROVED:'Aprobada',LEVERAGE_POST:'Apalancamiento ajustado',ENTRY_ARMED:'Entrada enviada',ENTRY_ACK:'Bitunix aceptó la entrada',ENTRY_UNKNOWN:'Respuesta de entrada incierta',PROTECTING:'Entrada ejecutada',POSITION_OBSERVED:'Posición confirmada',TP_MODE_FIXED:'Modo de TP fijado',F54_TP_CONFIRMED:'TP confirmado',F54_STOP_AND_TPS_OBSERVED_LOCAL:'SL y TP verificados',PROTECTED:'Protegida',BE_UNKNOWN:'Moviendo SL a Break Even',BE_CONFIRMED:'SL en Break Even confirmado',BE_WAITING_PRICE:'BE esperando precio',PROTECTION_REVIEW:'Protección a revisar',CLOSED:'Cerrada',CANCEL_REQUESTED:'Cancelación pedida',CANCELED:'Cancelada',PLAN_EXPIRED:'Plan vencido',SHADOW_ONLY:'Simulada',EMERGENCY_CLOSE_SENT:'Cierre de emergencia enviado',CLOSE_ATTRIBUTION:'Resultado del cierre obtenido'};
+const CLASS={VALIDA:['Señal','ok'],INFORMATIVA:['Mensaje','dim'],EXPIRADA:['Vencida','warn'],INCOMPLETA:['Incompleta','warn'],RECHAZADA:['Rechazada','bad'],REQUIERE_REVISION:['A revisar','warn'],DUPLICADA:['Repetida','dim']};
+const TG={CONNECTED_PAPER:'Conectado',CONNECTED_OBSERVE_ONLY:'Conectado (solo lectura)',CONNECTING:'Conectando…',DISCONNECTED:'Desconectado',DISABLED:'Apagado'};
+const BX={GET_ONLY_VERIFIED:'Conectado',STALE:'Datos viejos',ERROR:'Error de conexión',NOT_CHECKED:'Comprobando…',DISABLED:'Sin conexión'};
+const chip=(t,c)=>`<span class="chip ${c||''}">${t}</span>`;
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function cell(tr,v){let td=document.createElement('td');td.textContent=String(v??'');tr.append(td)}
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;$('toasts').append(t);setTimeout(()=>t.remove(),7000)}
+let S={status:null,live:null,auto:null},cfgToken=null,cfgLoaded=false,lastOk=0,known=null,opFilter='all',tgFilter='sig';
+
+async function refresh(){try{let r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);S.status=await r.json();lastOk=Date.now();renderStatus();renderOpen()}catch(e){$('ex').textContent='Sin conexión con el panel: '+e.message}}
+async function refreshLive(){try{let r=await fetch('/api/live',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);S.live=await r.json();renderLive();renderOpen();notify()}catch(e){$('live-summary').textContent='No se pudo leer: '+e.message}}
+async function refreshAuto(){try{let r=await fetch('/api/live/auto',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);S.auto=await r.json();renderAuto()}catch(e){$('auto-state').textContent='No verificable'}}
+
+function bxPos(sym){const b=(S.status||{}).bitunix_readonly||{};return (b.positions||[]).find(p=>p.symbol===sym)}
+function bxStops(pid){const b=(S.status||{}).bitunix_readonly||{};const l=(b.pending_tpsl||[]).filter(t=>String(t.positionId)===String(pid));return{sl:l.find(t=>t.slPrice),tp:l.filter(t=>t.tpPrice)}}
+
+function renderStatus(){const s=S.status;$('build').textContent=s.build||'-';
+ if(s.settings_nonce)cfgToken=s.settings_nonce;
+ const b=s.bitunix_readonly||{};const bxs=BX[b.status]||human(b.status)||'Sin conexión';
+ $('ex').textContent='Bitunix: '+bxs;$('bxstatus').textContent=bxs+(b.error_code?' ('+human(b.error_code)+')':'');
+ $('bxavailable').textContent=b.account?nf(b.account.available)+' USDT':'-';$('bx-av2').textContent=$('bxavailable').textContent;
+ $('bx-margin').textContent=b.positions?nf((b.positions||[]).reduce((a,p)=>a+(Number(p.margin)||0),0))+' USDT':'-';
+ $('bxpositions').textContent=b.positions?.length??'-';$('bxorders').textContent=b.pending_orders?.length??'-';$('bxtpsl').textContent=b.pending_tpsl?.length??'-';
+ let upnl=0,marg=0;(b.positions||[]).forEach(p=>{upnl+=Number(p.unrealizedPNL)||0;marg+=Number(p.margin)||0});
+ $('k-upnl').innerHTML=(b.positions||[]).length?`<span class="${cls(upnl)}">${usd(upnl)}</span>`:'0,00 USDT';$('k-upnl-hint').textContent=(b.positions||[]).length?((b.positions.length)+' posición(es) · ROI '+nf(marg?upnl/marg*100:0)+' %'):'sin posiciones';
+ const tg=TG[s.telegram]||(String(s.telegram||'').startsWith('ERROR')?'Error':human(s.telegram));$('tg').textContent=tg;$('tg-dot').className='dot '+(String(s.telegram).startsWith('CONNECTED')?'on':(s.telegram==='CONNECTING'?'warn':'bad'));
+ let a=s.telegram_activity||{};$('tgactivity').textContent=a.received?(a.received+' mensajes desde el inicio · último '+(a.last_received_utc?isoTime(a.last_received_utc):'-')):'Sin mensajes nuevos desde el inicio';
+ if(s.config){if(!cfgLoaded){$('cfg-margin').value=s.config.margin;$('cfg-leverage').value=s.config.leverage;$('cfg-max').value=s.config.max_positions;$('cfg-exposure').value=s.config.max_exposure_usdt;$('cfg-loss').value=s.config.max_loss_usdt;$('cfg-basis').value=s.config.balance_basis;cfgLoaded=true}$('cfg-effective-margin').textContent=s.config.margin+' USDT'}
+ $('cfg-available').textContent=b.account?nf(b.account.available)+' USDT':'-';
+ const m=Number(s.config?.margin||5),av=Number(b.account?.available||0);$('cfg-capacity').textContent=b.account?Math.max(0,Math.floor(av/(m*1.03))):'-';$('cfg-message').textContent=b.account?'Calculado con el saldo real de Bitunix y una reserva para comisiones.':'Sin lectura de Bitunix.';
+ // Bitunix positions table
+ const body=$('bx-positions');body.replaceChildren();const trades=(S.live||{}).trades||[];
+ (b.positions||[]).forEach(p=>{const st=bxStops(p.positionId);const mine=trades.find(t=>String(t.position_id)===String(p.positionId));const side=(p.side==='SELL'||p.side==='SHORT')?'SHORT':'LONG';const tr=document.createElement('tr');
+  tr.innerHTML=`<td><b>${esc(p.symbol)}</b></td><td>${chip(side==='LONG'?'Largo':'Corto',side.toLowerCase())}</td><td>${px(p.qty)}</td><td>${px(p.avgOpenPrice)}</td><td>${nf(p.margin)}</td><td>${esc(p.leverage)}x</td><td class="${cls(p.unrealizedPNL)}">${usd(p.unrealizedPNL)}</td><td>${st.sl?px(st.sl.slPrice):chip('Sin SL','bad')}</td><td>${st.tp.length?st.tp.map(t=>px(t.tpPrice)).join(', '):'-'}</td><td>${mine?chip('Bot','info'):chip('Manual','dim')}</td>`;body.append(tr)});
+ if(!(b.positions||[]).length){const tr=document.createElement('tr');tr.innerHTML='<td colspan="10" class="muted">Sin posiciones abiertas.</td>';body.append(tr)}
+ // Telegram events
+ const ev=$('events');ev.replaceChildren();const seen=new Set();(s.events||[]).filter(e=>{const k=e.channel+':'+e.message_id;if(seen.has(k))return false;seen.add(k);return true}).filter(e=>tgFilter==='all'||!['INFORMATIVA','DUPLICADA'].includes(e.classification)||((S.auto||{}).recent||[]).some(x=>String(x.signal_id).endsWith(':'+e.message_id))).forEach(e=>{const dec0=((S.auto||{}).recent||[]).find(x=>String(x.signal_id).endsWith(':'+e.message_id));const c=(dec0&&dec0.decision.startsWith('CHANNEL'))?['Seguimiento','info']:(CLASS[e.classification]||[human(e.classification),'dim']);const dec=((S.auto||{}).recent||[]).find(x=>String(x.signal_id).endsWith(':'+e.message_id));let bot='-';if(dec){let d={};try{d=JSON.parse(dec.detail)}catch(_){}const k=DEC[dec.decision]||[human(dec.decision),'dim'];bot=chip(k[0],k[1])+(d.symbol?' <b>'+esc(d.symbol)+'</b>':'')+(d.reason?' <span class="muted">'+esc(reason(d.reason))+'</span>':'')}
+  const tr=document.createElement('tr');tr.innerHTML=`<td>${isoTime(e.created_at)}</td><td>#${esc(e.message_id)}</td><td>${chip(c[0],c[1])}</td><td class="muted">${esc(dec0&&dec0.decision.startsWith('CHANNEL')?'Mensaje de seguimiento':(e.reason==='Sin direccion/simbolo'?'No contiene una señal':e.reason))}</td><td>${bot}</td>`;ev.append(tr)});
+ if(!ev.children.length){const tr=document.createElement('tr');tr.innerHTML='<td colspan="5" class="muted">Sin señales todavía.</td>';ev.append(tr)}
+ // simulation
+ $('balance').textContent=nf(s.balance_available_simulated)+' USDT';$('ex-paper').textContent=s.auto_paper==='ON'?'Sí':'No';
+ let mf=s.market_feed||{};$('marketstatus').textContent=mf.status==='OK'?'activos':'apagados';const mt=$('marketprices');mt.replaceChildren();for(let [sym,p] of Object.entries(mf.prices||{})){let tr=document.createElement('tr');cell(tr,sym);cell(tr,p);mt.append(tr)}
+ for(let [id,rows,keys] of [['trades',s.trades||[],['signal_id','symbol','side','entry','sl','remaining','state','be_state']],['pendinglimits',s.paper_limit_intents||[],['signal_id','symbol','side','entry','status','expires_at']]]){let bd=$(id);bd.replaceChildren();for(let it of rows.slice(0,30)){let tr=document.createElement('tr');keys.forEach(k=>cell(tr,human(it[k])));bd.append(tr)}}
+}
+
+function sideOf(t){return t.side==='LONG'?chip('Largo','long'):chip('Corto','short')}
+function stateChip(st){const s=STATE[st]||[human(st),'dim'];return chip(s[0],s[1])}
+function renderOpen(){const L=S.live;if(!L)return;const box=$('open-cards');box.replaceChildren();const open=(L.trades||[]).filter(t=>OPEN.includes(t.state));
+ if(!open.length){box.innerHTML='<div class="empty">Sin posiciones abiertas. Cuando llegue una señal y el automático esté armado, aparece acá.</div>';return}
+ open.forEach(t=>{const p=bxPos(t.symbol)||{};const pnl=Number(p.unrealizedPNL),m=Number(p.margin),q=Number(p.qty),avg=Number(p.avgOpenPrice||t.entry);const long=t.side==='LONG';const mark=q?(long?avg+pnl/q:avg-pnl/q):NaN;
+  const sl=Number(t.be_price||t.sl),tp=Number((t.tps||[]).slice(-1)[0]),lo=long?Number(t.sl):tp,hi=long?tp:Number(t.sl);const pos=v=>Math.min(100,Math.max(0,(v-lo)/(hi-lo)*100));const toward=v=>long?pos(v):100-pos(v);
+  const be=t.be_price?`<div class="mk be" style="left:${toward(Number(t.be_price))}%"><span>BE</span></div>`:'';const now=isFinite(mark)?`<div class="mk now" style="left:${toward(mark)}%"><span style="${t.be_price&&Math.abs(toward(mark)-toward(Number(t.be_price)))<12?'top:22px':''}">${px(mark)}</span></div>`:'';
+  const c=document.createElement('div');c.className='card';c.onclick=()=>openDrawer(t.client_id);
+  c.innerHTML=`<div class="card-top"><div><div class="sym">${esc(t.symbol.replace('USDT',''))}<span class="muted" style="font-size:13px">/USDT</span></div><div class="chips">${sideOf(t)}${chip(t.leverage+'x','dim')}${stateChip(t.state)}</div></div><div class="pnl ${cls(pnl)}">${isFinite(pnl)?usd(pnl):'-'}<small>${isFinite(pnl)&&m?nf(pnl/m*100)+' % ROI':''}</small></div></div>
+  <div class="bar"><div class="mk" style="left:0"><span>SL ${px(t.sl)}</span></div><div class="mk entry" style="left:${toward(Number(t.entry))}%"><span>Entrada</span></div>${be}${now}<div class="mk" style="left:100%"><span>TP ${px(tp)}</span></div></div>
+  <div class="grid3"><div>Entrada<b>${px(p.avgOpenPrice||t.entry)}</b></div><div>Stop actual<b>${px(sl)}${t.be_price?' (BE)':''}</b></div><div>Cantidad<b>${px(t.filled_qty||t.qty)}</b></div></div>`;box.append(c)})}
+
+function renderLive(){const L=S.live;const sm=L.summary||{};const trades=L.trades||[];
+ const sn=L.sessions_now||{};$('markets').textContent=(sn.open&&sn.open.length)?'Abiertas: '+sn.open.join(', '):'Bolsas cerradas';
+ $('k-today').innerHTML=`<span class="${cls(sm.pnl_today)}">${usd(sm.pnl_today||0)}</span>`;$('k-today-hint').textContent=(sm.closed_today||0)+' cerradas hoy · '+(sm.wins_today||0)+' ganadas · '+(sm.losses_today||0)+' perdidas';
+ const rev=(L.blocking||[]).length;$('badge-review').hidden=!rev;$('badge-review').textContent=rev;
+ $('live-summary').textContent=trades.length+' operaciones registradas · '+(sm.active||0)+' abiertas'+(rev?' · '+rev+' a revisar':'')+' · supervisor '+(L.supervised?'activo':'apagado');
+ const body=$('live-trades');body.replaceChildren();
+ trades.filter(t=>opFilter==='all'||(opFilter==='open'&&OPEN.includes(t.state))||(opFilter==='closed'&&t.state==='CLOSED')||(opFilter==='review'&&t.blocking)||(opFilter==='other'&&NOT_EXEC.includes(t.state))).forEach(t=>{const tr=document.createElement('tr');tr.className='click';tr.onclick=()=>openDrawer(t.client_id);const res=t.close&&t.close.realizedPNL!==undefined?`<span class="${cls(t.close.realizedPNL)}">${usd(t.close.realizedPNL)}</span>`:'';
+  tr.innerHTML=`<td>${dt(t.created_at)}</td><td><b>${esc(t.symbol)}</b></td><td>${sideOf(t)}</td><td>${t.signal_id.startsWith('manual')?chip('Manual','dim'):chip('Telegram #'+esc(t.signal_id.split(':').pop()),'info')}</td><td>${stateChip(t.state)}</td><td>${px(t.entry)}</td><td>${px(t.sl)}</td><td>${px((t.tps||[]).slice(-1)[0])}</td><td>${px(t.filled_qty||t.qty)}</td><td>${esc(t.leverage)}x</td><td>${t.be_price?px(t.be_price):'-'}</td><td>${res}</td>`;body.append(tr)});
+ if(!body.children.length){const tr=document.createElement('tr');tr.innerHTML='<td colspan="12" class="muted">Nada para mostrar con este filtro.</td>';body.append(tr)}
+ const cb=$('closed-rows');cb.replaceChildren();trades.filter(t=>t.state==='CLOSED').slice(0,8).forEach(t=>{const c=t.close||{};const ex=EXIT[c.exit]||['Sin dato','dim'];const tr=document.createElement('tr');tr.className='click';tr.onclick=()=>openDrawer(t.client_id);tr.innerHTML=`<td>${dt(t.updated_at)}</td><td><b>${esc(t.symbol)}</b></td><td>${sideOf(t)}</td><td>${px(c.entryPrice||t.entry)}</td><td>${px(c.closePrice)}</td><td class="${cls(c.realizedPNL)}">${c.realizedPNL!==undefined?usd(c.realizedPNL):'-'}</td><td>${chip(ex[0],ex[1])}</td>`;cb.append(tr)});
+ if(!cb.children.length){cb.innerHTML='<tr><td colspan="7" class="muted">Todavía no hay operaciones cerradas.</td></tr>'}
+}
+
+function renderAuto(){const A=S.auto;if(!A||A.status!=='OK'){$('auto').textContent='Sin datos';return}const st=A.settings||{};const armed=st.mode==='LIVE',shadow=st.mode==='SHADOW',running=A.worker==='RUNNING';
+ const label=armed?(running?'Armado':'Armado (sin escuchar)'):(shadow?'Modo sombra':'Desarmado');$('auto').textContent=label;$('auto-state').textContent=label;
+ const dotc='dot '+(armed&&running?'on':(armed||shadow?'warn':'off'));$('auto-dot').className=dotc;$('auto-dot2').className=dotc;$('pill-dot').className=dotc;
+ $('pill').textContent=armed?(running?'Automático armado · operando señales nuevas':'Automático armado · iniciá con --live-auto'):(shadow?'Modo sombra · no envía órdenes':'Automático desarmado');
+ $('k-auto-hint').textContent=armed?('Hoy '+A.executed_today+(Number(st.max_per_day)?' de '+st.max_per_day:'')+' · '+(Number(st.max_open)?'máx '+st.max_open+' a la vez':'cantidad según saldo')):(st.disarm_reason?'Último desarme: '+(st.disarm_reason==='DASHBOARD'?'desde el panel':(st.disarm_reason==='OPERATOR_CLI'?'desde la consola':'por seguridad (operación a revisar)')):'Armalo desde la consola');
+ $('auto-disarm').disabled=!(armed||shadow);
+ const entry=st.entry_policy==='AUTO'?'A mercado si el precio está a menos de '+st.max_entry_dev_pct+' % de la entrada; si no, orden límite':(st.entry_policy==='MARKET'?'Siempre a mercado':'Siempre orden límite al precio de la señal');
+ $('auto-kv').innerHTML=`<span>Escucha de señales</span><b>${running?'Activa':'Detenida'}</b><span>Operaciones hoy</span><b>${A.executed_today}${Number(st.max_per_day)?' de '+esc(st.max_per_day):' (sin límite diario)'}</b><span>Máximo a la vez</span><b>${Number(st.max_open)?esc(st.max_open):'Según tu saldo disponible'}</b><span>Entrada</span><b>${entry}</b><span>Take Profit</span><b>${st.tp_mode==='LAST'?'Un TP en el último objetivo':'Hasta 5 TP parciales'}</b><span>Apalancamiento</span><b>${st.use_signal_leverage==='YES'?'El de la señal (limitado por el par)':'El configurado'}</b><span>Break Even</span><b>Al tocar TP1 o con 1 % de movimiento a favor (20 % de ROI a 20x), con comisiones</b><span>Señales válidas</span><b>Nuevas, de menos de ${esc(st.max_age_seconds)} s, sin ediciones</b><span>Seguimiento del canal</span><b>${st.follow_channel_be==='YES'?'Si el canal avisa un objetivo tocado, el SL pasa a BE; y te avisa si el canal no coincide con tu cuenta':'Solo compara y avisa'}</b><span>Armado</span><b>${st.armed_at?dt(Number(st.armed_at)):'-'}</b>`;
+ const f=$('auto-log');f.replaceChildren();const items=(A.recent||[]);
+ items.forEach(e=>{let d={};try{d=JSON.parse(e.detail)}catch(_){}const k=DEC[e.decision]||[human(e.decision),'dim'];let txt='';
+  if(d.symbol)txt+=`<b>${esc(d.symbol)}</b> ${d.side?(d.side==='LONG'?'largo':'corto'):''} `;if(d.entry_type)txt+=`· ${d.entry_type==='MARKET'?'a mercado':'límite'} ${px(d.entry)} `;if(d.leverage)txt+=`· ${d.leverage}x `;if(d.qty)txt+=`· ${px(d.qty)} unidades `;if(d.reason)txt+=`· ${esc(reason(d.reason))} `;if(d.state)txt+=`· ${(STATE[d.state]||[human(d.state)])[0]}`;if(d.age_seconds)txt+=`· llegó hace ${Math.round(d.age_seconds)} s`;
+  const it=document.createElement('div');it.className='feed-item';it.innerHTML=`<div class="t">${time(e.at)}</div><div class="d">${chip(k[0],k[1])} ${e.signal_id&&e.signal_id!=='-'?'<span class="muted">mensaje #'+esc(e.signal_id.split(':').pop())+'</span>':''}<div style="margin-top:4px">${txt}</div></div>`;f.append(it)});
+ if(!items.length)f.innerHTML='<div class="empty">Sin decisiones todavía.</div>';
+ const feed=$('feed');feed.replaceChildren();items.slice(0,10).forEach(e=>{let d={};try{d=JSON.parse(e.detail)}catch(_){}const k=DEC[e.decision]||[human(e.decision),'dim'];const it=document.createElement('div');it.className='feed-item';it.innerHTML=`<div class="t">${time(e.at)}</div><div class="d">${chip(k[0],k[1])} ${d.symbol?'<b>'+esc(d.symbol)+'</b>':''} ${d.reason?'<span class="muted">'+esc(reason(d.reason))+'</span>':''}</div>`;feed.append(it)});if(!items.length)feed.innerHTML='<div class="empty">Sin actividad todavía.</div>';
+}
+
+function notify(){const tr=(S.live||{}).trades||[];const now=Object.fromEntries(tr.map(t=>[t.client_id,t.state]));if(known){for(const t of tr){const old=known[t.client_id];if(old===undefined&&OPEN.includes(t.state))toast('Nueva operación: '+t.symbol+' '+(t.side==='LONG'?'largo':'corto'));else if(old&&old!==t.state){if(t.state==='CLOSED'){const c=t.close||{};toast(t.symbol+' cerrada '+(c.realizedPNL!==undefined?usd(c.realizedPNL):''))}else if(t.state==='BE_CONFIRMED')toast(t.symbol+': SL movido a Break Even '+px(t.be_price));else if(t.blocking)toast('Atención: '+t.symbol+' '+(STATE[t.state]||[human(t.state)])[0])}}}known=now}
+
+function openDrawer(id){const t=((S.live||{}).trades||[]).find(x=>x.client_id===id);if(!t)return;const c=t.close||{};const ex=EXIT[c.exit];
+ $('drawer-body').innerHTML=`<h2 style="font-size:20px;margin-top:6px">${esc(t.symbol)}</h2><div class="chips">${sideOf(t)}${stateChip(t.state)}${chip(t.leverage+'x','dim')}</div>
+ <div class="kv" style="margin-top:14px"><span>Origen</span><b>${t.signal_id.startsWith('manual')?'Manual':'Telegram, mensaje #'+esc(t.signal_id.split(':').pop())}</b><span>Entrada</span><b>${t.entry_type==='MARKET'?'A mercado':'Límite'} · ${px(t.entry)}</b><span>Cantidad</span><b>${px(t.filled_qty||t.qty)}</b><span>Margen</span><b>${nf(t.margin_usdt)} USDT</b><span>Stop Loss</span><b>${px(t.sl)}</b><span>Take Profit</span><b>${t.tp_mode==='LAST'?px((t.tps||[]).slice(-1)[0]):(t.tps||[]).map(px).join(' · ')}</b><span>Break Even</span><b>${t.be_price?px(t.be_price):'Pendiente'}</b><span>Pérdida máx. prevista</span><b>${nf(t.max_loss_usdt)} USDT</b>${t.reason?`<span>Motivo</span><b>${esc(reason(t.reason))}</b>`:''}${c.closePrice?`<span>Cierre</span><b>${px(c.closePrice)} · ${ex?ex[0]:'-'}</b><span>Resultado</span><b class="${cls(c.realizedPNL)}">${usd(c.realizedPNL)}</b>`:''}</div>
+ <h2 style="margin-top:20px">Historia</h2><div class="tl">${(t.timeline||[]).map(e=>`<div>${esc(EVT[e.event]||human(e.event))}<small>${dt(e.at)}</small></div>`).join('')||'<div>Sin eventos</div>'}</div>`;
+ $('drawer').classList.add('open');$('drawer').setAttribute('aria-hidden','false')}
+$('drawer-close').onclick=()=>{$('drawer').classList.remove('open');$('drawer').setAttribute('aria-hidden','true')};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('drawer-close').click();$('modal').classList.remove('open')}});
+
+for(const b of document.querySelectorAll('#op-filters .fbtn'))b.onclick=()=>{opFilter=b.dataset.f;document.querySelectorAll('#op-filters .fbtn').forEach(x=>x.classList.toggle('active',x===b));renderLive()};
+for(const b of document.querySelectorAll('#tg-filters .fbtn'))b.onclick=()=>{tgFilter=b.dataset.f;document.querySelectorAll('#tg-filters .fbtn').forEach(x=>x.classList.toggle('active',x===b));renderStatus()};
+
+$('auto-disarm').onclick=()=>$('modal').classList.add('open');$('modal-no').onclick=()=>$('modal').classList.remove('open');
+$('modal-yes').onclick=async()=>{$('modal').classList.remove('open');try{if(!cfgToken)throw Error('sin sesión');let r=await fetch('/api/live/disarm',{method:'POST',headers:{'Content-Type':'application/json','X-Punk-Settings-Nonce':cfgToken},body:'{}'});if(!r.ok)throw Error('HTTP '+r.status);toast('Automático desarmado');await refreshAuto()}catch(e){toast('No se pudo desarmar: '+e.message)}};
+
+$('config-form').addEventListener('submit',async e=>{e.preventDefault();const result=$('cfg-result');const data={margin:$('cfg-margin').value,leverage:$('cfg-leverage').value,max_positions:$('cfg-max').value,max_exposure_usdt:$('cfg-exposure').value,max_loss_usdt:$('cfg-loss').value,balance_basis:$('cfg-basis').value};result.textContent='Guardando…';try{if(!cfgToken)throw Error('Sesión sin token');const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Punk-Settings-Nonce':cfgToken},body:JSON.stringify(data)});const info=await r.json();if(!r.ok)throw Error(human(info.reason)||'HTTP '+r.status);result.textContent='Guardado';toast('Configuración guardada');cfgLoaded=false;await refresh()}catch(err){result.textContent='No se guardó: '+err.message}});
+
+const tabButtons=[...document.querySelectorAll('[data-tab]')];
+function setTab(name,focus=false){if(!tabButtons.some(t=>t.dataset.tab===name))name='resumen';for(const b of tabButtons){const active=b.dataset.tab===name;b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;if(active&&focus)b.focus()}for(const panel of document.querySelectorAll('[data-panel]'))panel.hidden=panel.dataset.panel!==name;try{history.replaceState(null,'','#'+name)}catch(_){}}
+for(const b of tabButtons){b.addEventListener('click',()=>setTab(b.dataset.tab));b.addEventListener('keydown',e=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;e.preventDefault();let i=tabButtons.indexOf(b);let j=e.key==='Home'?0:e.key==='End'?tabButtons.length-1:e.key==='ArrowRight'?(i+1)%tabButtons.length:(i+tabButtons.length-1)%tabButtons.length;setTab(tabButtons[j].dataset.tab,true)})}
+setTab(location.hash.slice(1));window.addEventListener('hashchange',()=>setTab(location.hash.slice(1)));
+
+
+let repRange='today';
+function rangeTs(){const now=new Date();let to=Math.floor(now.getTime()/1000)+1,from;if(repRange==='today'){const d=new Date(now);d.setHours(0,0,0,0);from=Math.floor(d.getTime()/1000)}else if(repRange==='custom'){const f=$('rep-from').value,t=$('rep-to').value;if(!f||!t)return null;from=Math.floor(new Date(f+'T00:00:00').getTime()/1000);to=Math.floor(new Date(t+'T23:59:59').getTime()/1000)+1}else{from=to-Number(repRange)*86400}return [from,to]}
+async function refreshReport(){const r=rangeTs();if(!r)return;try{const res=await fetch('/api/live/report?from='+r[0]+'&to='+r[1],{cache:'no-store'});const R=await res.json();if(!res.ok)throw Error(R.status);renderReport(R)}catch(e){$('rep-note').textContent='No se pudo calcular: '+e.message}}
+function renderReport(R){$('rep-pnl').innerHTML=`<span class="${cls(R.pnl)}">${usd(R.pnl)}</span>`;$('rep-count').textContent=R.count;$('rep-wl').innerHTML=`<span class="pos">${R.wins}</span> / <span class="neg">${R.losses}</span>`;$('rep-wr').textContent=R.win_rate!==null?nf(R.win_rate,1)+' %':'-';$('rep-pf').textContent=R.profit_factor!==null?nf(R.profit_factor):(R.wins?'Sin pérdidas':'-');$('rep-bw').innerHTML=R.best!==null?`<span class="pos">${usd(R.best)}</span> / <span class="${cls(R.worst)}">${usd(R.worst)}</span>`:'-';
+ $('rep-note').textContent=(R.unknown_pnl?R.unknown_pnl+' operación(es) sin resultado informado por Bitunix. ':'')+(R.sessions_exact?'':'Horarios de bolsa aproximados: instalá tzdata (pip install tzdata) para el horario de verano exacto.');
+ const pts=R.curve||[];const box=$('rep-chart');if(!pts.length){box.innerHTML='<div class="empty">Sin operaciones cerradas en este período.</div>'}else{const W=1000,H=180,P=24;const vals=[0,...pts.map(p=>Number(p.cum))];const mn=Math.min(...vals),mx=Math.max(...vals),rg=(mx-mn)||1;const x=i=>P+i*(W-2*P)/Math.max(1,vals.length-1),y=v=>H-P-(v-mn)*(H-2*P)/rg;const path=vals.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');const last=vals[vals.length-1];const col=last>=0?'#22c55e':'#f05252';
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:200px"><line x1="${P}" x2="${W-P}" y1="${y(0)}" y2="${y(0)}" stroke="#2b3c58" stroke-dasharray="4 4"/><path d="${path} L ${x(vals.length-1)} ${y(0)} L ${x(0)} ${y(0)} Z" fill="${col}22"/><path d="${path}" fill="none" stroke="${col}" stroke-width="2.5"/>${vals.map((v,i)=>i?`<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${col}"><title>${usd(v)}</title></circle>`:'').join('')}<text x="${W-P}" y="16" text-anchor="end" fill="${col}" font-size="14" font-weight="700">${usd(last)}</text></svg>`}
+ const tb=(id,rows,f)=>{const b=$(id);b.replaceChildren();rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=f(r);b.append(tr)});if(!rows.length)b.innerHTML='<tr><td colspan="9" class="muted">Sin datos</td></tr>'};
+ tb('rep-sessions',Object.values(R.by_session||{}).filter(s=>s.trades),s=>`<td>${esc(s.label)}</td><td>${s.trades}</td><td>${s.trades?nf(s.wins/s.trades*100,0)+' %':'-'}</td><td class="${cls(s.pnl)}">${usd(s.pnl)}</td>`);
+ tb('rep-symbols',Object.entries(R.by_symbol||{}).sort((a,b)=>Number(b[1].pnl)-Number(a[1].pnl)),([k,v])=>`<td><b>${esc(k)}</b></td><td>${v.trades}</td><td class="${cls(v.pnl)}">${usd(v.pnl)}</td>`);
+ tb('rep-exits',Object.entries(R.by_exit||{}),([k,v])=>{const e=EXIT[k]||['Sin dato','dim'];return `<td>${chip(e[0],e[1])}</td><td>${v.trades}</td><td class="${cls(v.pnl)}">${usd(v.pnl)}</td>`});
+ tb('rep-trades',[...(R.trades||[])].reverse(),t=>{const e=EXIT[t.exit]||['Sin dato','dim'];return `<td>${dt(t.opened_at)}</td><td>${dt(t.closed_at)}</td><td><b>${esc(t.symbol)}</b></td><td>${t.side==='LONG'?chip('Largo','long'):chip('Corto','short')}</td><td>${(t.session_labels||[]).map(l=>chip(l,'info')).join(' ')}</td><td>${px(t.entry)}</td><td>${px(t.close)}</td><td>${chip(e[0],e[1])}</td><td class="${cls(t.pnl)}">${t.pnl!==null&&t.pnl!==undefined?usd(t.pnl):'-'}</td>`})}
+for(const b of document.querySelectorAll('#rep-filters [data-r]'))b.onclick=()=>{repRange=b.dataset.r;document.querySelectorAll('#rep-filters [data-r]').forEach(x=>x.classList.toggle('active',x===b));$('rep-custom').style.display=repRange==='custom'?'inline-flex':'none';if(repRange==='custom'&&!$('rep-from').value){const d=new Date();$('rep-to').value=d.toISOString().slice(0,10);d.setDate(d.getDate()-7);$('rep-from').value=d.toISOString().slice(0,10)}refreshReport()};
+$('rep-apply').onclick=refreshReport;
+const CAP={telegram_paper:['Lectura de señales de Telegram',v=>v==='AVAILABLE'],bitunix_readonly:['Lectura de cuenta Bitunix',v=>v==='AVAILABLE'],https_write_contract:['Envío seguro de órdenes',v=>v&&v.startsWith('ACTIVE')],durable_write_journal:['Registro antes de cada envío',v=>v==='ACTIVE'],real_order_submission:['Entradas reales con autorización',v=>!!v&&v!=='NOT_IMPLEMENTED'],real_protection_confirmation:['SL y TP verificados en Bitunix',v=>!!v&&v!=='NOT_VERIFIED'],live_supervisor:['Supervisor (protección y Break Even)',v=>v==='ACTIVE'],telegram_live_automation:['Escucha del automático',v=>v==='WORKER_RUNNING']};
+async function refreshCapabilities(){try{let r=await fetch('/api/capabilities',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);let s=await r.json();const box=$('live-checks');box.replaceChildren();const nt=(S.live||{}).notify==='ACTIVE';{const d=document.createElement('div');d.className='check';d.innerHTML=`<span class="dot ${nt?'on':'off'}"></span><span>Avisos a tu Telegram</span><span style="margin-left:auto">${chip(nt?'Activo':'Sin configurar',nt?'ok':'dim')}</span>`;box.append(d)}for(let [k,[label,ok]] of Object.entries(CAP)){const v=(s.capabilities||{})[k];const good=ok(v);const d=document.createElement('div');d.className='check';d.innerHTML=`<span class="dot ${good?'on':'off'}"></span><span>${label}</span><span style="margin-left:auto">${chip(good?'Activo':'Apagado',good?'ok':'dim')}</span>`;box.append(d)}}catch(e){$('live-checks').innerHTML='<div class="check">No se pudo consultar</div>'}}
+setInterval(()=>{$('updated').textContent=lastOk?'Actualizado hace '+Math.round((Date.now()-lastOk)/1000)+' s':'Conectando…';$('foot-right').textContent='Punk AutoTrade '+((S.status||{}).build||'')},1000);
+refreshCapabilities();refresh();refreshLive();refreshAuto();refreshReport();setInterval(refreshReport,30000);setInterval(refresh,4000);setInterval(refreshLive,5000);setInterval(refreshAuto,5000);setInterval(refreshCapabilities,15000);
+</script></body></html>
