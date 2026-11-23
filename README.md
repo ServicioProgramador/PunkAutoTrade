@@ -129,4 +129,3 @@ El bot registra el motivo de cada señal descartada. Lo ves en la pestaña **Se�
 ## Licencia
 
 Uso personal. Software provisto "tal cual", sin garantías de ningún tipo.
-Desarrollado por Kevin Windecker - ItsGranJK
