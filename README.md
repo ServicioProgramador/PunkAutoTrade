@@ -107,6 +107,18 @@ El panel queda en **http://127.0.0.1:8766**.
 | `python run.py --live-reconcile` | Concilia con Bitunix y completa protecciones pendientes |
 | `python run.py --help` | Lista completa de opciones |
 
+## Operar a mano con el sistema
+
+**Abrir una señal a mano, validada por el sistema.** Si el automático no abrió una señal (por ejemplo, porque la pérdida hasta el SL superaba tu límite) y todavía estás a tiempo:
+
+```bash
+python run.py --live-open 734 --max-loss 6
+```
+
+El número es el del mensaje del canal. El sistema hace los mismos chequeos que el automático (precio todavía entre el SL y el TP1, margen, exposición, margen aislado) y decide si entra a mercado o con orden límite. `--max-loss` sube el tope de pérdida solo para esa operación. Pide confirmación escrita antes de enviar.
+
+**Posiciones abiertas a mano en Bitunix.** El bot las detecta y las gestiona como propias: usa tu SL y tu TP si los pusiste, o los de la última señal del canal para ese par, y mueve el SL a Break Even igual que en las operaciones automáticas. No toca posiciones con varias órdenes de SL/TP, ni inventa un SL si no hay señal. Se desactiva con `PA_LIVE_ADOPT_MANUAL=NO`.
+
 ## Configuración del automático
 
 | Opción | Por defecto | Qué controla |
@@ -130,5 +142,3 @@ El bot registra el motivo de cada señal descartada. Lo ves en la pestaña **Se�
 ## Licencia
 
 Uso personal. Software provisto "tal cual", sin garantías de ningún tipo.
-
-Desarrollado por Kevin Windecker - ItsGranJK

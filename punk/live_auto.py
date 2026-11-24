@@ -43,7 +43,29 @@ class AutoStore:
             CREATE TABLE IF NOT EXISTS live_auto_settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS live_auto_log (
               id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, signal_id TEXT NOT NULL,
-              decision TEXT NOT NULL, detail TEXT NOT NULL);'''), begin=False)
+              decision TEXT NOT NULL, detail TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS live_signal_cache (
+              signal_id TEXT PRIMARY KEY, at INTEGER NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL,
+              text TEXT NOT NULL);'''), begin=False)
+
+    # F66: every valid channel signal is kept (any mode), so a manual open can be validated by the
+    # system and a manual position can be matched with its signal's SL/TP.
+    def cache_signal(self, signal_id, symbol, side, text):
+        self.store._tx(lambda c: c.execute(
+            'INSERT OR IGNORE INTO live_signal_cache(signal_id,at,symbol,side,text) VALUES(?,?,?,?,?)',
+            (signal_id, int(time.time()), symbol, side, text[:4000])))
+
+    def cached_message(self, message_id):
+        row = self.store._tx(lambda c: c.execute(
+            "SELECT * FROM live_signal_cache WHERE signal_id LIKE ? ORDER BY at DESC LIMIT 1",
+            ('%:' + str(int(message_id)),)).fetchone())
+        return dict(row) if row else None
+
+    def latest_signal(self, symbol, side, max_age=86400):
+        row = self.store._tx(lambda c: c.execute(
+            'SELECT * FROM live_signal_cache WHERE symbol=? AND side=? AND at>=? ORDER BY at DESC LIMIT 1',
+            (symbol, side, int(time.time()) - max_age)).fetchone())
+        return dict(row) if row else None
 
     def settings(self):
         rows = self.store._tx(lambda c: c.execute('SELECT k,v FROM live_auto_settings').fetchall())
@@ -146,6 +168,13 @@ class AutoTrader:
         sid = '%s:%d' % (channel, message_id)
         cfg = self.auto.settings()
         mode = cfg['mode']
+        if not edited:
+            sig0, st0, _ = parse(text)
+            if st0 == 'VALIDA':
+                try:
+                    self.auto.cache_signal(sid, self.ex.resolve_symbol(sig0.symbol), sig0.side, text)
+                except Exception:
+                    pass
         if not edited and parse(text)[1] != 'VALIDA':
             from punk.channel_followup import classify
             fu = classify(text)
@@ -298,3 +327,40 @@ def auto_payload(store):
         return {'status': 'NO_LIVE_DB'}
     a = AutoStore(store)
     return {'status': 'OK', 'settings': a.settings(), 'executed_today': a.executed_today(), 'recent': a.recent(20)}
+
+
+# ------------------------------------------------------------------ F66
+def signal_lookup(auto_store, resolve=lambda s: s):
+    """(symbol, side) -> (signal_id, Signal) from the last 24 h of channel signals, or None."""
+    def lookup(symbol, side):
+        row = auto_store.latest_signal(symbol, side)
+        if not row:
+            return None
+        sig, status, _ = parse(row['text'])
+        if status != 'VALIDA' or resolve(sig.symbol) != symbol or sig.side != side:
+            return None
+        return row['signal_id'], sig
+    return lookup
+
+
+def adopt_cycle(executor, auto_store, seen):
+    """Supervisor hook: adopt manual positions and log the decisions (dashboard + Telegram)."""
+    for decision, detail in executor.adopt_manual(signal_lookup(auto_store, executor.resolve_symbol), seen):
+        auto_store.log('adopt:' + detail.get('position_id', '-'), decision, detail)
+
+
+def manual_open_plan(trader, message_id, max_loss=None):
+    """F66: the operator opens a channel signal by hand THROUGH the system (all checks, own entry policy).
+    Only the per-trade loss limit may be raised, explicitly, for this one trade."""
+    row = trader.auto.cached_message(message_id)
+    if not row:
+        raise LabBlocked('MESSAGE_NOT_IN_CACHE')
+    signal, status, reason = parse(row['text'])
+    if status != 'VALIDA':
+        raise LabBlocked('NOT_A_SIGNAL')
+    cfg = trader.auto.settings()
+    sid = 'manual:' + row['signal_id']
+    entry_type = trader._entry_type(signal, cfg)
+    leverage = signal.leverage if (cfg['use_signal_leverage'] == 'YES' and signal.leverage and signal.leverage >= 3) else None
+    return trader.ex.plan(signal, signal_id=sid, entry_type=entry_type, leverage=leverage,
+                          tp_mode=cfg['tp_mode'], max_loss=max_loss)

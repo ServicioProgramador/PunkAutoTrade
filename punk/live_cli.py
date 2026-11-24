@@ -165,7 +165,14 @@ def cmd_permission_check(executor, symbol):
 
 
 def supervise_forever(executor, interval=20, state=None):
+    from punk.live_auto import AutoStore, adopt_cycle
+    auto_store, seen = AutoStore(executor.store), {}
     while True:
+        try:
+            adopt_cycle(executor, auto_store, seen)          # F66: manual positions on Bitunix
+        except Exception as exc:
+            if state is not None:
+                state['live_adopt'] = {'last_run': int(time.time()), 'error': type(exc).__name__}
         try:
             results = executor.reconcile_all()
             if state is not None:
@@ -208,4 +215,37 @@ def cmd_arm(auto, args, ask=input):
         _out('LIVE_ARM_REFUSED', {'reason': str(exc)})
         return None
     _out('LIVE_ARMED', result)
+    return result
+
+
+def cmd_open(trader, message_id, max_loss=None, ask=input):
+    """F66: open a channel signal by hand THROUGH the system: same checks and entry policy as the
+    automatic mode (price still between SL and TP1, margin, exposure, isolation...), optional one-off
+    loss limit, typed confirmation, then the normal GET-confirmed protection and BE."""
+    from punk.live_auto import manual_open_plan
+    try:
+        plan = manual_open_plan(trader, message_id, max_loss)
+    except LabBlocked as exc:
+        _out('LIVE_OPEN_REFUSED', {'reason': str(exc), 'orders_sent': 0})
+        return None
+    ex = trader.ex
+    print('Senal #%s validada por el sistema:' % message_id, json.dumps({
+        k: plan[k] for k in ('symbol', 'side', 'entry_type', 'entry', 'market_at_plan', 'qty', 'sl', 'tps',
+                             'leverage', 'margin_usdt', 'max_loss_usdt')}, sort_keys=True), flush=True)
+    expected = 'ABRIR %s %s %s' % (plan['symbol'], plan['side'], plan['qty'])
+    typed = ask('Escribi exactamente "%s" para enviar: ' % expected)
+    if typed.strip() != expected:
+        ex.store.transition(plan['client_id'], ('PLANNED',), 'PLAN_EXPIRED', reason='CONFIRMATION_MISMATCH')
+        _out('LIVE_OPEN_REFUSED', {'reason': 'CONFIRMATION_MISMATCH', 'orders_sent': 0})
+        return None
+    try:
+        token = ex.approve(plan['client_id'])
+        result = ex.execute(plan['client_id'], token)
+    except LabBlocked as exc:
+        _out('LIVE_OPEN_REFUSED', {'reason': str(exc)})
+        return None
+    trader.auto.log(plan['signal_id'], 'MANUAL_SENT', {k: plan[k] for k in (
+        'client_id', 'symbol', 'side', 'entry_type', 'entry', 'qty', 'sl', 'leverage', 'max_loss_usdt')}
+        | {'state': result.get('state')})
+    _out('LIVE_OPEN', result)
     return result

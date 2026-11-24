@@ -164,6 +164,20 @@ def message_for_decision(dec):
         return '📣 Corrección del canal%s. Revisá si te afecta.' % (' sobre <b>%s</b>' % d['symbol'] if d.get('symbol') else '')
     if k == 'AUTO_OFF_SIGNAL' and d.get('symbol'):
         return '⏸️ Señal NO abierta: <b>%s</b> %s (el automático está desarmado)' % (d['symbol'], SIDE.get(d.get('side'), ''))
+    ADOPT = {'MULTIPLE_PROTECTION_ORDERS': 'tiene varias órdenes de SL/TP', 'PARTIAL_PROTECTION_ORDER':
+             'su SL o TP no cubre toda la posición', 'NO_SL_NO_SIGNAL': 'no tiene SL y no hay señal del canal para ese par',
+             'NO_TP_NO_SIGNAL': 'no tiene TP y no hay señal del canal para ese par',
+             'LEVELS_INVALID_FOR_ENTRY': 'su SL ya está en la entrada o a favor', 'SL_ALREADY_CROSSED':
+             'el precio ya pasó el SL de la señal'}
+    if k == 'ADOPTED':
+        return ('🤝 Posición manual gestionada: <b>%s</b> %s\nSL %s%s · TP %s%s\nBreak Even automático activado'
+                % (d.get('symbol'), SIDE.get(d.get('side'), ''), d.get('sl'), ' (el tuyo)' if d.get('own_sl') else ' (de la señal)',
+                   d.get('tp'), ' (el tuyo)' if d.get('own_tp') else ' (de la señal)'))
+    if k == 'ADOPT_SKIPPED':
+        return ('✋ Posición manual <b>%s</b> sin gestionar: %s'
+                % (d.get('symbol'), ADOPT.get(str(d.get('reason', '')).split(':')[0], 'chequeo de seguridad')))
+    if k == 'MANUAL_SENT':
+        return '✅ Abierta a mano y validada por el sistema: <b>%s</b> %s' % (d.get('symbol'), SIDE.get(d.get('side'), ''))
     if k in ('MAX_OPEN_REACHED', 'MAX_PER_DAY_REACHED'):
         return '⏭️ Señal no abierta: %s' % ('límite de operaciones a la vez' if k == 'MAX_OPEN_REACHED' else 'límite diario')
     return None

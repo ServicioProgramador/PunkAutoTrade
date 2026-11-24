@@ -40,6 +40,8 @@ def main():
     g.add_argument('--live-resolve', metavar='CLIENT_ID', help='Cerrar registro bloqueante SOLO si GET prueba ausencia de exposicion')
     g.add_argument('--live-emergency-close', metavar='CLIENT_ID', help='Contingencia: cierre flash de la posicion de esa operacion')
     g.add_argument('--live-permission-check', metavar='SYMBOL', help='Verificar permiso de trading: fija el apalancamiento ACTUAL (sin ordenes)')
+    g.add_argument('--live-open', type=int, metavar='ID', help='Abrir a mano una senal del canal validada por el sistema (pide confirmacion escrita)')
+    g.add_argument('--max-loss', default=None, help='Con --live-open: tope de perdida por SL solo para esa operacion (USDT)')
     g.add_argument('--live-arm', choices=('SHADOW', 'LIVE'), help='Armar el automatico Telegram->LIVE (SHADOW no envia); pide confirmacion escrita')
     g.add_argument('--live-disarm', action='store_true', help='Desarmar el automatico (no toca posiciones abiertas)')
     g.add_argument('--live-auto-status', action='store_true', help='Estado del automatico y ultimas decisiones')
@@ -105,12 +107,16 @@ def main():
         return
     live_cmd = (args.live_check or args.live_status or args.live_plan or args.live_plan_message or args.live_approve or args.live_execute
                 or args.live_reconcile or args.live_resolve or args.live_emergency_close or args.live_permission_check
-                or args.live_arm or args.live_disarm or args.live_auto_status)
+                or args.live_arm or args.live_disarm or args.live_auto_status or args.live_open)
     if live_cmd:
         from punk import live_cli
         repo = Repository(Path(os.environ.get('PA_DB_PATH', 'data/punk_paper.db')))
         needs_trader = bool(args.live_execute or args.live_reconcile or args.live_emergency_close
                             or args.live_permission_check)
+        if args.live_open:
+            from punk.live_auto import AutoTrader
+            live_cli.cmd_open(AutoTrader(live_cli.build_executor(repo, with_trader=True)), args.live_open, args.max_loss)
+            return
         if args.live_arm or args.live_disarm or args.live_auto_status:
             import json
             from punk.live_auto import AutoTrader
