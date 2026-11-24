@@ -138,7 +138,8 @@ class AutoTrader:
             try:
                 self.handle(*item)
             except Exception as exc:  # the worker must survive any single signal
-                self.auto.log('%s:%s' % (item[0], item[1]), 'WORKER_ERROR', {'error': type(exc).__name__})
+                self.auto.log('%s:%s' % (item[0], item[1]), 'WORKER_ERROR',
+                              {'error': type(exc).__name__, 'message': str(exc)[:160]})
 
     # ------------------------------------------------------------ decision
     def handle(self, channel, message_id, text, date, edited=False, reply_to=None):
@@ -185,10 +186,13 @@ class AutoTrader:
                 plan = self.ex.plan(signal, signal_id=sid, entry_type=entry_type, leverage=leverage,
                                     tp_mode=cfg['tp_mode'])
             except LabBlocked as exc:
-                return self._skip(sid, 'PLAN_REFUSED', {'reason': str(exc), 'symbol': signal.symbol})
+                return self._skip(sid, 'PLAN_REFUSED', {'reason': str(exc), 'symbol': self.ex.resolve_symbol(signal.symbol),
+                                                        'signal_symbol': signal.symbol})
             summary = {k: plan[k] for k in ('client_id', 'symbol', 'side', 'entry_type', 'entry', 'qty', 'sl',
                                             'leverage', 'leverage_requested', 'tp_mode', 'required_usdt',
                                             'max_loss_usdt')}
+            if plan['symbol'] != signal.symbol:
+                summary['signal_symbol'] = signal.symbol      # F64: alias applied (e.g. RAYSOL -> RAY)
             if mode == 'SHADOW':
                 self.ex.store.transition(plan['client_id'], ('PLANNED',), 'SHADOW_ONLY', reason='SHADOW_MODE')
                 self.auto.log(sid, 'SHADOW_PLANNED', summary)
@@ -228,7 +232,7 @@ class AutoTrader:
         if fu.kind == 'CORRECTION':
             return self._skip(sid, 'CHANNEL_CORRECTION', base)
         with self.lock:
-            row = self._find_trade(channel, fu.symbol, reply_to)
+            row = self._find_trade(channel, self.ex.resolve_symbol(fu.symbol) if fu.symbol else fu.symbol, reply_to)
             if not row:
                 return self._skip(sid, 'CHANNEL_NO_TRADE', base)
             cid = row['client_id']
@@ -275,7 +279,7 @@ class AutoTrader:
         if policy in ('LIMIT', 'MARKET'):
             return policy
         try:
-            market = self.ex._price(signal.symbol)
+            market = self.ex._price(self.ex.resolve_symbol(signal.symbol))
         except Exception:
             return 'LIMIT'
         dev = abs(market - signal.entry_price) / signal.entry_price * 100

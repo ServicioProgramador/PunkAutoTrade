@@ -40,7 +40,9 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F63'
+BUILD = 'F64'
+# F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
+SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
                       'SHADOW_ONLY'})
 # Known, reconciled-or-progressing states: they do NOT block new entries nor disarm the auto mode.
@@ -92,6 +94,15 @@ class LiveConfig:
         # F63: the BE stop triggers on LAST price (the initial SL keeps MARK price against wicks).
         # LIVE evidence 2026-11-23: MARK-triggered BE stops filled several ticks below BE on fast dumps.
         self.be_stop_type = str(over.get('be_stop_type', env('PA_LIVE_BE_STOP_TYPE', 'LAST_PRICE'))).upper()
+        # F64: channel ticker aliases. Built-in + PA_SYMBOL_ALIASES="RAYSOL=RAY,FOO=BAR".
+        self.symbol_aliases = dict(SYMBOL_ALIASES)
+        for item in str(over.get('symbol_aliases', env('PA_SYMBOL_ALIASES', ''))).split(','):
+            if '=' in item:
+                a, b = (x.strip().upper() for x in item.split('=', 1))
+                if a and b:
+                    a = a if a.endswith('USDT') else a + 'USDT'
+                    b = b if b.endswith('USDT') else b + 'USDT'
+                    self.symbol_aliases[a] = b
         self.be_on_tp1 = str(over.get('be_on_tp1', get('live_be_on_tp1', 'YES'))).upper() == 'YES'
         self.limit_ttl = int(over.get('limit_ttl_seconds', get('live_limit_ttl_seconds', '7200')))
         self.plan_ttl = int(over.get('plan_ttl_seconds', 300))
@@ -321,8 +332,18 @@ class LiveExecutor:
             raise LabBlocked('TICKER_UNAVAILABLE')
         return price
 
+    def resolve_symbol(self, symbol):
+        """F64: channel ticker -> Bitunix ticker (e.g. RAYSOLUSDT -> RAYUSDT). A wrong alias cannot
+        open a bad trade: plan() still requires SL < price < TP1 (LONG) on the real market price."""
+        return self.config.symbol_aliases.get(symbol, symbol)
+
     def _contract(self, symbol):
-        c = self.reader.public_contract(symbol)
+        try:
+            c = self.reader.public_contract(symbol)
+        except BitunixContractError as exc:
+            raise LabBlocked('SYMBOL_NOT_ON_BITUNIX:' + str(exc)[:40]) from None
+        except ValueError:
+            raise LabBlocked('SYMBOL_NOT_ON_BITUNIX') from None
         if c.get('symbolStatus') != 'OPEN' or c.get('isApiSupported') is not True:
             raise LabBlocked('CONTRACT_NOT_OPEN')
         try:
@@ -437,7 +458,7 @@ class LiveExecutor:
         existing = self.store.by_signal(signal_id)
         if existing:
             raise LabBlocked('SIGNAL_ALREADY_PLANNED:' + existing['state'])
-        symbol, side = signal.symbol, signal.side
+        symbol, side = self.resolve_symbol(signal.symbol), signal.side
         entry_type = entry_type or signal.entry_type
         if entry_type not in ('MARKET', 'LIMIT') or side not in ('LONG', 'SHORT'):
             raise LabBlocked('INVALID_SIGNAL')

@@ -100,7 +100,8 @@ REASONS = {'INSUFFICIENT_AVAILABLE_MARGIN': 'margen insuficiente', 'LEVELS_INVAL
            'SL_LOSS_ABOVE_LIMIT': 'la pérdida por SL supera tu límite', 'MAX_POSITIONS_REACHED':
            'límite de posiciones', 'MAX_EXPOSURE_REACHED': 'exposición máxima alcanzada',
            'MARGIN_MODE_NOT_ISOLATION': 'el par está en margen cruzado', 'QTY_BELOW_CONTRACT_MINIMUM':
-           'cantidad menor al mínimo del par', 'CONTRACT_NOT_OPEN': 'par no disponible en Bitunix'}
+           'cantidad menor al mínimo del par', 'CONTRACT_NOT_OPEN': 'par no disponible en Bitunix',
+           'SYMBOL_NOT_ON_BITUNIX': 'el par no existe en Bitunix'}
 
 
 def message_for_event(store, ev):
