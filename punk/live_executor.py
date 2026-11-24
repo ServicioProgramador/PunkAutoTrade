@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F64'
+BUILD = 'F65'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -76,14 +76,24 @@ def quantize(value, tick, rounding):
 class LiveConfig:
     """Live-only parameters. Capital limits come from the shared settings table."""
 
-    def __init__(self, repo=None, **over):
+    def reload_capital(self):
+        """F65: re-read the capital limits saved from the dashboard (Configuración).
+        LIVE 2026-11-24: margin changed 5 -> 10 USDT in the panel, but the running process kept
+        planning 5 USDT because the limits were only read at start-up."""
+        repo, over = self._repo, self._over
         get = (lambda k, d: repo.setting(k, d)) if repo is not None else (lambda k, d: d)
-        env = os.environ.get
         self.margin = D(over.get('margin', get('margin', '5')))
         self.leverage = int(over.get('leverage', get('leverage', '20')))
         self.max_positions = int(over.get('max_positions', get('max_positions', '3')))
         self.max_exposure = D(over.get('max_exposure_usdt', get('max_exposure_usdt', '300')))
         self.max_loss = D(over.get('max_loss_usdt', get('max_loss_usdt', '5')))
+        return self
+
+    def __init__(self, repo=None, **over):
+        get = (lambda k, d: repo.setting(k, d)) if repo is not None else (lambda k, d: d)
+        env = os.environ.get
+        self._repo, self._over = repo, dict(over)
+        self.reload_capital()
         self.fee_rate = D(over.get('fee_rate', env('PA_LIVE_FEE_RATE', get('live_fee_rate', '0.0006'))))
         # BE trigger = favorable PRICE move from the average entry, in % (user rule:
         # 1% move == 1% x leverage ROI, e.g. 20% ROI at 20x), or TP1 touched.
@@ -444,6 +454,8 @@ class LiveExecutor:
     # ----------------------------------------------------------------- plan
     def plan(self, signal, *, signal_id, entry_type=None, leverage=None, tp_mode=None):
         cfg = self.config
+        if hasattr(cfg, 'reload_capital'):
+            cfg.reload_capital()          # F65: always plan with the limits saved right now
         requested_lev = int(leverage if leverage is not None else cfg.leverage)
         if not 3 <= requested_lev <= 200:
             raise LabBlocked('INVALID_LEVERAGE')
