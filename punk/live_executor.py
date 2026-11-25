@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F69'
+BUILD = 'F70'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -875,7 +875,21 @@ class LiveExecutor:
             be = D(row['be_price']) if row.get('be_price') else None
             sl, tp_last = D(plan['sl']), D(plan['tps'][-1])
             long = plan['side'] == 'LONG'
-            if (long and close >= tp_last) or (not long and close <= tp_last):
+            partial = self._partial_filled(row, plan)
+            if partial is not None:
+                # F70: 75 % already closed at the partial TP. Bitunix may report the last close or the
+                # average close: both are checked. A partial trade is judged by its money, never a draw.
+                pq, rq, ptp = partial
+                near = lambda a, b: abs(a - b) / b < D('0.002')
+                avg_tp = (pq * ptp + rq * tp_last) / (pq + rq)
+                avg_be = (pq * ptp + rq * be) / (pq + rq) if be is not None else None
+                if near(close, tp_last) or near(close, avg_tp) or (long and close >= tp_last) or (not long and close <= tp_last):
+                    out['exit'] = 'PARTIAL_TP'
+                elif be is not None and (near(close, be) or near(close, avg_be)):
+                    out['exit'] = 'PARTIAL_BE'
+                else:
+                    out['exit'] = 'PARTIAL_OTHER'
+            elif (long and close >= tp_last) or (not long and close <= tp_last):
                 out['exit'] = 'TP_LAST'
             elif be is not None and abs(close - be) / be < D('0.002'):
                 out['exit'] = 'BE_STOP'
@@ -887,6 +901,19 @@ class LiveExecutor:
             out['exit'] = 'UNKNOWN'
         out['attribution'] = 'HISTORY_GET'
         return out
+
+    def _partial_filled(self, row, plan):
+        """(partial qty, rest qty, partial price) if the PARTIAL TP of this trade was filled, else None."""
+        if (row.get('tp_mode') or plan.get('tp_mode')) != 'PARTIAL' or not plan.get('partial_tp'):
+            return None
+        filled = any(e['event'] == 'BE_UNKNOWN' and '"TP1_FILL"' in (e.get('detail') or '')
+                     for e in self.store.events(row['client_id'], 200))
+        if not filled:
+            return None
+        split = partial_split(plan, row['filled_qty'] or plan['qty'])
+        if split is None:
+            return None
+        return D(split[1][0]), D(split[1][1]), D(plan['partial_tp'])
 
     def _tp_mode(self, row, plan):
         """Approved plan mode wins; legacy plans (pre-F57) use the current config.

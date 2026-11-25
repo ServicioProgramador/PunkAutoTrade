@@ -94,7 +94,8 @@ def _fmt(v):
 
 
 SIDE = {'LONG': 'LARGO 🟢', 'SHORT': 'CORTO 🔴'}
-EXIT = {'TP_LAST': 'Take Profit 🎯', 'BE_STOP': 'Break Even 🛡️', 'SL': 'Stop Loss ⛔', 'OTHER': 'Otro'}
+EXIT = {'TP_LAST': 'Take Profit 🎯', 'BE_STOP': 'Break Even 🛡️', 'PARTIAL_TP': 'Parcial + Take Profit 🎯',
+        'PARTIAL_BE': 'Parcial + Break Even 💰', 'PARTIAL_OTHER': 'Parcial + cierre manual', 'SL': 'Stop Loss ⛔', 'OTHER': 'Otro'}
 REASONS = {'INSUFFICIENT_AVAILABLE_MARGIN': 'margen insuficiente', 'LEVELS_INVALID_FOR_CURRENT_PRICE':
            'el precio ya pasó la entrada o TP1', 'SYMBOL_ALREADY_EXPOSED': 'ya hay posición en ese par',
            'SL_LOSS_ABOVE_LIMIT': 'la pérdida por SL supera tu límite', 'MAX_POSITIONS_REACHED':
