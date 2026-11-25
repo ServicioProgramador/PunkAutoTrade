@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F70'
+BUILD = 'F71'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -48,7 +48,11 @@ TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE
 # Known, reconciled-or-progressing states: they do NOT block new entries nor disarm the auto mode.
 # (LIVE 2026-11-22: a LIMIT entry ACK whose order was not yet visible by GET disarmed the auto mode.)
 SAFE_ACTIVE = frozenset({'ENTRY_PENDING', 'PROTECTED', 'BE_CONFIRMED', 'ENTRY_ACK', 'PROTECTING',
-                         'BE_UNKNOWN', 'ENTRY_PARTIAL', 'CANCEL_REQUESTED'})
+                         'BE_UNKNOWN', 'ENTRY_PARTIAL', 'CANCEL_REQUESTED', 'SL_ONLY'})
+# F71: Bitunix answers code 710002 "This trading pair does not currently support trading via OpenAPI" on
+# tpsl endpoints for some pairs (LIVE 2026-11-25 DASHUSDT) while the entry with its attached SL works.
+API_UNSUPPORTED_CODES = {710002}
+SYMBOL_FLAG_TTL = 7 * 86400
 # BLOCKING (critical, needs evidence or operator): ENTRY_ARMED, ENTRY_UNKNOWN,
 # ENTRY_REJECTED_UNCONFIRMED, PROTECTION_REVIEW, REVIEW, EMERGENCY_CLOSE_SENT.
 ACK_LOOKUP_GRACE = 600
@@ -160,6 +164,8 @@ class LiveStore:
               be_price TEXT NOT NULL DEFAULT '', tp_mode TEXT NOT NULL DEFAULT '',
               created_at INTEGER NOT NULL,
               updated_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS live_symbol_flags (
+              symbol TEXT PRIMARY KEY, flag TEXT NOT NULL, at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS live_leases (
               client_id TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS live_events (
@@ -256,6 +262,16 @@ class LiveStore:
 
     def release(self, client_id, owner):
         self._tx(lambda c: c.execute('DELETE FROM live_leases WHERE client_id=? AND owner=?', (client_id, owner)))
+
+    def flag_symbol(self, symbol, flag):
+        self._tx(lambda c: c.execute('INSERT OR REPLACE INTO live_symbol_flags(symbol,flag,at) VALUES(?,?,?)',
+                                     (symbol, flag, int(time.time()))))
+
+    def symbol_flag(self, symbol):
+        row = self._tx(lambda c: c.execute('SELECT * FROM live_symbol_flags WHERE symbol=?', (symbol,)).fetchone())
+        if row and time.time() - row['at'] < SYMBOL_FLAG_TTL:
+            return row['flag']
+        return None
 
     def blocking(self, exclude=None):
         return [r for r in self.all(1000) if r['state'] not in TERMINAL | SAFE_ACTIVE | IDLE
@@ -534,6 +550,8 @@ class LiveExecutor:
         if existing:
             raise LabBlocked('SIGNAL_ALREADY_PLANNED:' + existing['state'])
         symbol, side = self.resolve_symbol(signal.symbol), signal.side
+        if self.store.symbol_flag(symbol) == 'TPSL_API_UNSUPPORTED':
+            raise LabBlocked('PAIR_TPSL_NOT_SUPPORTED_BY_API')
         entry_type = entry_type or signal.entry_type
         if entry_type not in ('MARKET', 'LIMIT') or side not in ('LONG', 'SHORT'):
             raise LabBlocked('INVALID_SIGNAL')
@@ -790,7 +808,7 @@ class LiveExecutor:
             self._protect(row, plan)
             row = self.store.get(client_id)
             state = row['state']
-        if state in ('PROTECTED', 'BE_CONFIRMED', 'BE_UNKNOWN'):
+        if state in ('PROTECTED', 'BE_CONFIRMED', 'BE_UNKNOWN', 'SL_ONLY'):
             self._supervise(row, plan)
         if state in ('EMERGENCY_CLOSE_SENT', 'REVIEW') and row['filled_qty']:
             try:
@@ -972,6 +990,17 @@ class LiveExecutor:
                                           detail={'stop_kind': port.stop_kind, 'tps': len(qtys)})
                     return
                 final = 'FOREIGN_OR_AMBIGUOUS_PROTECTION'
+            if final == 'UNKNOWN_TP' and self._api_unsupported(cid, port):
+                # Definitive REJECTED (nothing created): the pair has no tpsl via API. The SL attached to
+                # the entry is confirmed by GET; keep watching it, the operator sets the TP by hand.
+                snap = port.snapshot()
+                stop = snap.get('stop')
+                if snap.get('position') and stop and not stop.get('ambiguous'):
+                    self.store.flag_symbol(plan['symbol'], 'TPSL_API_UNSUPPORTED')
+                    self.store.transition(cid, ('PROTECTING', 'PROTECTION_REVIEW'), 'SL_ONLY',
+                                          reason='TPSL_API_UNSUPPORTED', position_id=snap['position']['position_id'],
+                                          detail={'posts': port.outcomes[-1:]})
+                    return
             if row['state'] != 'PROTECTION_REVIEW' or row['reason'] != str(final):
                 self.store.transition(cid, ('PROTECTING', 'PROTECTION_REVIEW'), 'PROTECTION_REVIEW',
                                       reason=str(final), detail={'posts': port.outcomes})
@@ -987,6 +1016,17 @@ class LiveExecutor:
                                       reason=str(exc)[:80], detail={'posts': port.outcomes})
         except TimeoutError as exc:
             self.store.event(cid, 'PROTECTION_GET_UNAVAILABLE', {'reason': str(exc)[:80]})
+
+    def _api_unsupported(self, cid, port):
+        posts = list(port.outcomes)
+        for e in self.store.events(cid, 20):
+            if e['event'] in ('F54_UNKNOWN_TP', 'PROTECTION_REVIEW'):
+                try:
+                    posts += json.loads(e['detail']).get('posts') or []
+                except ValueError:
+                    pass
+        return any(isinstance(p, dict) and p.get('state') == 'REJECTED' and p.get('code') in API_UNSUPPORTED_CODES
+                   for p in posts)
 
     def _be_target(self, raw, avg, qty, long, tick):
         """F63 BE price that closes in PROFIT, not at zero.
@@ -1036,8 +1076,8 @@ class LiveExecutor:
         if not stop or stop.get('ambiguous'):
             self.store.transition(cid, None, 'PROTECTION_REVIEW', reason='STOP_LOST_WITH_OPEN_POSITION')
             return
-        if row['state'] == 'BE_CONFIRMED':
-            return
+        if row['state'] in ('BE_CONFIRMED', 'SL_ONLY'):
+            return                         # SL_ONLY: no tpsl writes possible on this pair; just watch it
         raw = port.position_raw or {}
         qty_now = D(pos['qty'])
         tp1_hit = qty_now < D(pintent.quantity)

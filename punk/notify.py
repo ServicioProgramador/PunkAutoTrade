@@ -102,7 +102,8 @@ REASONS = {'INSUFFICIENT_AVAILABLE_MARGIN': 'margen insuficiente', 'LEVELS_INVAL
            'límite de posiciones', 'MAX_EXPOSURE_REACHED': 'exposición máxima alcanzada',
            'MARGIN_MODE_NOT_ISOLATION': 'el par está en margen cruzado', 'QTY_BELOW_CONTRACT_MINIMUM':
            'cantidad menor al mínimo del par', 'CONTRACT_NOT_OPEN': 'par no disponible en Bitunix',
-           'SYMBOL_NOT_ON_BITUNIX': 'el par no existe en Bitunix'}
+           'SYMBOL_NOT_ON_BITUNIX': 'el par no existe en Bitunix',
+           'PAIR_TPSL_NOT_SUPPORTED_BY_API': 'Bitunix no permite TP/SL por API en este par'}
 
 
 def message_for_event(store, ev):
@@ -129,6 +130,10 @@ def message_for_event(store, ev):
         return ('✅ Operación abierta con SL y TP\n%s\nEntrada %s · Cantidad %s\nSL %s · TP %s\nMargen %s USDT'
                 % (head, plan['entry'], row['filled_qty'] or plan['qty'], plan['sl'], tp,
                    _fmt(plan.get('margin_usdt')).lstrip('+')))
+    if e == 'SL_ONLY':
+        return ('⚠️ %s\nBitunix no permite poner TP ni mover el SL por API en este par.\n'
+                'La posición tiene el SL de la señal (%s). Poné el TP a mano en Bitunix.\n'
+                'Las próximas señales de este par no se van a abrir (7 días).' % (head, plan['sl']))
     if e == 'BE_CONFIRMED':
         return '🛡️ Stop movido a Break Even\n%s\nNuevo SL %s (sin pérdida si vuelve)' % (head, row['be_price'])
     if e in ('CLOSED', 'CLOSE_ATTRIBUTION'):
