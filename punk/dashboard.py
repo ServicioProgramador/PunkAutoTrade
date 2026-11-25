@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-BUILD = 'F68'
+BUILD = 'F69'
 
 
 def create_server(engine, host='127.0.0.1', port=8766, integration=None, monitor=None, feed=None, live=None, auto=None):

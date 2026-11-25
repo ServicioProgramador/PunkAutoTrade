@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F68'
+BUILD = 'F69'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -315,6 +315,21 @@ def levels_ok_for(long, sl, ref, tp1, market, entry_type, pending=True):
     return coherent and (live or waiting)
 
 
+def partial_level(long, ref, tp1, cfg, tick):
+    """F69: the partial closes at whatever comes FIRST: the signal's TP1 or be_move_pct % in favour.
+    TP1 is only used if it is beyond the fee cover (2 x fee + BE profit %), so the 75 % never closes
+    at a loss or flat."""
+    move = cfg.be_move_pct / 100
+    pct_level = D(quantize(ref * (1 + move) if long else ref * (1 - move), tick, ROUND_FLOOR if long else ROUND_CEILING))
+    cover = 2 * cfg.fee_rate + cfg.be_profit_pct / 100
+    floor_ = ref * (1 + cover) if long else ref * (1 - cover)
+    tp1 = D(tp1)
+    tp1_usable = (tp1 > floor_) if long else (tp1 < floor_)
+    if tp1_usable and ((tp1 < pct_level) if long else (tp1 > pct_level)):
+        return canon(tp1), 'TP1'
+    return canon(pct_level), 'MOVE_PCT'
+
+
 def partial_split(plan, filled):
     """F67 PARTIAL: (partial_tp, last_tp), (pct % of filled, rest) in contract units.
     None when the quantity cannot be split above the contract minimum."""
@@ -571,8 +586,7 @@ class LiveExecutor:
         partial_tp, partial_note = None, ''
         if mode_tp == 'PARTIAL':
             long_ = side == 'LONG'
-            raw_tp = ref * (1 + cfg.be_move_pct / 100) if long_ else ref * (1 - cfg.be_move_pct / 100)
-            partial_tp = quantize(raw_tp, tick, ROUND_FLOOR if long_ else ROUND_CEILING)
+            partial_tp, partial_src = partial_level(long_, ref, tps[0], cfg, tick)
             last = D(tps[-1])
             inside = (ref < D(partial_tp) < last) if long_ else (last < D(partial_tp) < ref)
             probe = {'qty_step': canon(step), 'min_qty': canon(min_qty), 'partial_pct': canon(cfg.partial_pct),
@@ -602,7 +616,7 @@ class LiveExecutor:
                 'payload': payload, 'planned_at': int(self.clock()), 'tp_mode': mode_tp,
                 'tp_dropped': len(signal.tps) - len(tps)}
         if partial_tp:
-            plan.update({'partial_tp': partial_tp, 'partial_pct': canon(cfg.partial_pct)})
+            plan.update({'partial_tp': partial_tp, 'partial_pct': canon(cfg.partial_pct), 'partial_at': partial_src})
         if partial_note:
             plan['partial_note'] = partial_note
         existing = self.store.get(intent.client_id())
@@ -1090,14 +1104,25 @@ class LiveExecutor:
             first = seen.setdefault(pid, now)
             if now - first < self.config.adopt_grace:
                 continue
-            if seen.get(pid + '#done'):
+            # F69: a skipped position is looked at again when its SL/TP orders change (e.g. the operator
+            # removes his own TPs so the bot can apply the 75/25). The same reason is reported only once.
+            sig = '|'.join(sorted('%s:%s:%s:%s' % (o.get('id'), o.get('slPrice'), o.get('tpPrice'),
+                                                   o.get('slQty') or o.get('tpQty'))
+                                  for o in snap.get('pending_tpsl') or [] if str(o.get('positionId') or '') == pid))
+            if seen.get(pid + '#done') or seen.get(pid + '#sig') == sig:
                 continue
             try:
                 decision, detail = self._adopt_one(p, pid, symbol, side, snap, lookup, tp_mode)
             except (LabBlocked, TimeoutError) as exc:
                 decision, detail = 'ADOPT_SKIPPED', {'reason': str(exc)[:80]}
             detail.update({'symbol': symbol, 'side': side, 'position_id': pid})
-            seen[pid + '#done'] = 1
+            if decision == 'ADOPTED':
+                seen[pid + '#done'] = 1
+            else:
+                seen[pid + '#sig'] = sig
+                if seen.get(pid + '#reason') == detail.get('reason'):
+                    continue
+                seen[pid + '#reason'] = detail.get('reason')
             out.append((decision, detail))
         for k in [k for k in seen if k.split('#')[0] not in current]:
             seen.pop(k, None)              # position gone: forget it
@@ -1145,15 +1170,14 @@ class LiveExecutor:
         # F68: PARTIAL for manual positions too, when the operator did not set his own TP.
         mode, extra, tp_qtys = 'LAST', {}, [canon(qty)]
         if tp_mode == 'PARTIAL' and not tps and sig is not None:
-            move = self.config.be_move_pct / 100
-            ptp = quantize(avg * (1 + move) if long else avg * (1 - move), tick, ROUND_FLOOR if long else ROUND_CEILING)
+            ptp, psrc = partial_level(long, avg, levels[0], self.config, tick)
             ahead = (market < D(ptp) < D(levels[-1])) if long else (D(levels[-1]) < D(ptp) < market)
             probe = {'qty_step': canon(step), 'min_qty': canon(min_qty), 'partial_pct': canon(self.config.partial_pct),
                      'partial_tp': ptp, 'tps': list(levels)}
             split = partial_split(probe, qty) if ahead else None
             if split is not None:
                 mode, tp_qtys = 'PARTIAL', split[1]
-                extra = {'partial_tp': ptp, 'partial_pct': canon(self.config.partial_pct)}
+                extra = {'partial_tp': ptp, 'partial_pct': canon(self.config.partial_pct), 'partial_at': psrc}
         plan = {'build': BUILD, 'signal_id': intent.signal_id, 'client_id': intent.client_id(),
                 'fingerprint': intent.fingerprint(), 'symbol': symbol, 'side': side, 'entry_type': 'MARKET',
                 'qty': intent.quantity, 'entry': intent.entry, 'market_at_plan': canon(market), 'sl': sl,
