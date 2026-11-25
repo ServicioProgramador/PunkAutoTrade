@@ -345,7 +345,8 @@ def signal_lookup(auto_store, resolve=lambda s: s):
 
 def adopt_cycle(executor, auto_store, seen):
     """Supervisor hook: adopt manual positions and log the decisions (dashboard + Telegram)."""
-    for decision, detail in executor.adopt_manual(signal_lookup(auto_store, executor.resolve_symbol), seen):
+    tp_mode = auto_store.settings().get('tp_mode', 'LAST')
+    for decision, detail in executor.adopt_manual(signal_lookup(auto_store, executor.resolve_symbol), seen, tp_mode):
         auto_store.log('adopt:' + detail.get('position_id', '-'), decision, detail)
 
 

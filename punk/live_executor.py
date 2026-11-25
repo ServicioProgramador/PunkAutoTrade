@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F67'
+BUILD = 'F68'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -104,6 +104,8 @@ class LiveConfig:
         # F63: the BE stop triggers on LAST price (the initial SL keeps MARK price against wicks).
         # LIVE evidence 2026-11-23: MARK-triggered BE stops filled several ticks below BE on fast dumps.
         self.be_stop_type = str(over.get('be_stop_type', env('PA_LIVE_BE_STOP_TYPE', 'LAST_PRICE'))).upper()
+        # F68: LIMIT entries waiting on the far side of the market are allowed (pending setups).
+        self.pending_limit = str(over.get('pending_limit', env('PA_LIVE_PENDING_LIMIT', 'YES'))).upper() == 'YES'
         # F66: take over positions opened by hand on Bitunix (SL/TP from the channel signal + BE).
         self.adopt_manual = str(over.get('adopt_manual', env('PA_LIVE_ADOPT_MANUAL', 'YES'))).upper() == 'YES'
         self.adopt_grace = int(over.get('adopt_grace', 60))
@@ -293,6 +295,24 @@ def split_units(total, step, min_qty, n):
     parts = [base] * k
     parts[-1] += units - base * k
     return [canon(step * p) for p in parts]
+
+
+def levels_ok_for(long, sl, ref, tp1, market, entry_type, pending=True):
+    """Price checks before an entry.
+    The levels must be coherent (SL < entry < TP1 for a LONG) and the market must still be between SL
+    and TP1. F68: a LIMIT entry that is still WAITING on the far side of the market (LONG buy below the
+    price, SHORT sell above it, e.g. "Entrada: 61450 - 61600" with BTC at 60 000) is a valid pending
+    setup even if the price is already beyond TP1: it fills only if the price comes back to the entry."""
+    sl, ref, tp1, market = D(sl), D(ref), D(tp1), D(market)
+    if long:
+        coherent = sl < ref < tp1
+        live = sl < market < tp1
+        waiting = entry_type == 'LIMIT' and pending and market > ref
+    else:
+        coherent = sl > ref > tp1
+        live = sl > market > tp1
+        waiting = entry_type == 'LIMIT' and pending and market < ref
+    return coherent and (live or waiting)
 
 
 def partial_split(plan, filled):
@@ -533,9 +553,7 @@ class LiveExecutor:
         tps = [quantize(t, tick, ROUND_FLOOR if long else ROUND_CEILING) for t in signal.tps]
         if len(set(tps)) != len(tps):
             raise LabBlocked('TP_LEVELS_COLLAPSE_AFTER_ROUNDING')
-        levels_ok = (D(sl) < ref < D(tps[0]) and D(sl) < market < D(tps[0])) if long else \
-                    (D(sl) > ref > D(tps[0]) and D(sl) > market > D(tps[0]))
-        if not levels_ok:
+        if not levels_ok_for(long, sl, ref, tps[0], market, entry_type, cfg.pending_limit):
             raise LabBlocked('LEVELS_INVALID_FOR_CURRENT_PRICE')
         qty = (cfg.margin * leverage / ref / step).to_integral_value(rounding=ROUND_DOWN) * step
         if qty < min_qty:
@@ -645,7 +663,8 @@ class LiveExecutor:
             raise LabBlocked('MAX_EXPOSURE_REACHED')
         market = self._price(plan['symbol'])
         long = plan['side'] == 'LONG'
-        if not ((D(plan['sl']) < market < D(plan['tps'][0])) if long else (D(plan['sl']) > market > D(plan['tps'][0]))):
+        if not levels_ok_for(long, plan['sl'], plan['entry'], plan['tps'][0], market, plan['entry_type'],
+                             self.config.pending_limit):
             raise LabBlocked('LEVELS_INVALID_FOR_CURRENT_PRICE')
         if plan['entry_type'] == 'MARKET':
             drift = abs(market - D(plan['entry'])) / D(plan['entry']) * 100
@@ -1041,7 +1060,7 @@ class LiveExecutor:
             self.store.event(cid, 'BE_NOT_CONFIRMED', {'state': r['state'], 'posts': port.outcomes})
 
     # ------------------------------------------------------------- F66 adopt
-    def adopt_manual(self, lookup, seen):
+    def adopt_manual(self, lookup, seen, tp_mode='LAST'):
         """Take over positions opened BY HAND on Bitunix so they get the same management as bot trades:
         SL (the operator's own, or the channel signal's), TP (own, or the signal's last target),
         and Break Even at TP1 touch / be_move_pct.
@@ -1074,7 +1093,7 @@ class LiveExecutor:
             if seen.get(pid + '#done'):
                 continue
             try:
-                decision, detail = self._adopt_one(p, pid, symbol, side, snap, lookup)
+                decision, detail = self._adopt_one(p, pid, symbol, side, snap, lookup, tp_mode)
             except (LabBlocked, TimeoutError) as exc:
                 decision, detail = 'ADOPT_SKIPPED', {'reason': str(exc)[:80]}
             detail.update({'symbol': symbol, 'side': side, 'position_id': pid})
@@ -1084,7 +1103,7 @@ class LiveExecutor:
             seen.pop(k, None)              # position gone: forget it
         return out
 
-    def _adopt_one(self, p, pid, symbol, side, snap, lookup):
+    def _adopt_one(self, p, pid, symbol, side, snap, lookup, tp_mode='LAST'):
         long = side == 'LONG'
         qty, avg = D(p.get('qty')), D(p.get('avgOpenPrice'))
         orders = [o for o in snap.get('pending_tpsl') or [] if str(o.get('positionId') or '') == pid]
@@ -1123,25 +1142,38 @@ class LiveExecutor:
             return 'ADOPT_SKIPPED', {'reason': 'SL_ALREADY_CROSSED'}
         lev = int(D(p.get('leverage') or 0) or self.config.leverage)
         loss = qty * abs(avg - D(sl))
+        # F68: PARTIAL for manual positions too, when the operator did not set his own TP.
+        mode, extra, tp_qtys = 'LAST', {}, [canon(qty)]
+        if tp_mode == 'PARTIAL' and not tps and sig is not None:
+            move = self.config.be_move_pct / 100
+            ptp = quantize(avg * (1 + move) if long else avg * (1 - move), tick, ROUND_FLOOR if long else ROUND_CEILING)
+            ahead = (market < D(ptp) < D(levels[-1])) if long else (D(levels[-1]) < D(ptp) < market)
+            probe = {'qty_step': canon(step), 'min_qty': canon(min_qty), 'partial_pct': canon(self.config.partial_pct),
+                     'partial_tp': ptp, 'tps': list(levels)}
+            split = partial_split(probe, qty) if ahead else None
+            if split is not None:
+                mode, tp_qtys = 'PARTIAL', split[1]
+                extra = {'partial_tp': ptp, 'partial_pct': canon(self.config.partial_pct)}
         plan = {'build': BUILD, 'signal_id': intent.signal_id, 'client_id': intent.client_id(),
                 'fingerprint': intent.fingerprint(), 'symbol': symbol, 'side': side, 'entry_type': 'MARKET',
                 'qty': intent.quantity, 'entry': intent.entry, 'market_at_plan': canon(market), 'sl': sl,
-                'tps': list(levels), 'tp_qtys': [canon(qty)], 'leverage': lev, 'leverage_requested': lev,
+                'tps': list(levels), 'tp_qtys': tp_qtys, 'leverage': lev, 'leverage_requested': lev,
                 'margin_mode': p.get('marginMode') or '', 'margin_usdt': canon(D(p.get('margin') or 0)),
                 'notional_usdt': canon(qty * avg), 'fee_reserve_usdt': '0', 'required_usdt': '0',
                 'max_loss_usdt': canon(loss), 'available_usdt': '0', 'qty_step': canon(step),
                 'tick': canon(tick), 'min_qty': canon(min_qty), 'payload': {}, 'planned_at': int(self.clock()),
-                'tp_mode': 'LAST', 'tp_dropped': 0, 'origin': 'ADOPTED', 'adopted_signal': sig_id,
-                'adopted_own_sl': bool(stops), 'adopted_own_tp': bool(tps)}
+                'tp_mode': mode, 'tp_dropped': 0, 'origin': 'ADOPTED', 'adopted_signal': sig_id,
+                'adopted_own_sl': bool(stops), 'adopted_own_tp': bool(tps), **extra}
         cid = intent.client_id()
         if self.store.get(cid):
             return 'ADOPT_SKIPPED', {'reason': 'ALREADY_ADOPTED'}
         self.store.insert({'client_id': cid, 'signal_id': intent.signal_id, 'symbol': symbol, 'side': side,
                            'entry_type': 'MARKET', 'fingerprint': intent.fingerprint(), 'plan': plan})
         self.store.transition(cid, ('PLANNED',), 'PROTECTING', event='ADOPTED', filled_qty=canon(qty),
-                              tp_mode='LAST', detail={'signal': sig_id, 'own_sl': bool(stops), 'own_tp': bool(tps)})
+                              tp_mode=mode, detail={'signal': sig_id, 'own_sl': bool(stops), 'own_tp': bool(tps)})
         st = self.reconcile(cid)
-        return 'ADOPTED', {'client_id': cid, 'signal': sig_id, 'sl': sl, 'tp': levels[-1],
+        return 'ADOPTED', {'client_id': cid, 'signal': sig_id, 'sl': sl, 'tp': levels[-1], 'tp_mode': mode,
+                           'partial_tp': extra.get('partial_tp', ''),
                            'own_sl': bool(stops), 'own_tp': bool(tps), 'state': st.get('state')}
 
     def request_channel_be(self, client_id):

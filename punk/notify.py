@@ -125,7 +125,7 @@ def message_for_event(store, ev):
             tp = '%s %% en %s · resto en %s' % (plan.get('partial_pct', '75'), plan['partial_tp'], plan['tps'][-1])
         else:
             tp = ', '.join(plan['tps'])
-        return ('✅ Operación abierta y protegida\n%s\nEntrada %s · Cantidad %s\nSL %s · TP %s\nMargen %s USDT'
+        return ('✅ Operación abierta con SL y TP\n%s\nEntrada %s · Cantidad %s\nSL %s · TP %s\nMargen %s USDT'
                 % (head, plan['entry'], row['filled_qty'] or plan['qty'], plan['sl'], tp,
                    _fmt(plan.get('margin_usdt')).lstrip('+')))
     if e == 'BE_CONFIRMED':
@@ -178,9 +178,10 @@ def message_for_decision(dec):
              'LEVELS_INVALID_FOR_ENTRY': 'su SL ya está en la entrada o a favor', 'SL_ALREADY_CROSSED':
              'el precio ya pasó el SL de la señal'}
     if k == 'ADOPTED':
-        return ('🤝 Posición manual gestionada: <b>%s</b> %s\nSL %s%s · TP %s%s\nBreak Even automático activado'
-                % (d.get('symbol'), SIDE.get(d.get('side'), ''), d.get('sl'), ' (el tuyo)' if d.get('own_sl') else ' (de la señal)',
-                   d.get('tp'), ' (el tuyo)' if d.get('own_tp') else ' (de la señal)'))
+        tp = ('75 %% en %s · resto en %s (de la señal)' % (d.get('partial_tp'), d.get('tp'))
+              if d.get('tp_mode') == 'PARTIAL' else '%s%s' % (d.get('tp'), ' (el tuyo)' if d.get('own_tp') else ' (de la señal)'))
+        return ('🤝 Posición manual gestionada: <b>%s</b> %s\nSL %s%s · TP %s\nBreak Even automático activado'
+                % (d.get('symbol'), SIDE.get(d.get('side'), ''), d.get('sl'), ' (el tuyo)' if d.get('own_sl') else ' (de la señal)', tp))
     if k == 'ADOPT_SKIPPED':
         return ('✋ Posición manual <b>%s</b> sin gestionar: %s'
                 % (d.get('symbol'), ADOPT.get(str(d.get('reason', '')).split(':')[0], 'chequeo de seguridad')))
