@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F71'
+BUILD = 'F72'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -1076,8 +1076,8 @@ class LiveExecutor:
         if not stop or stop.get('ambiguous'):
             self.store.transition(cid, None, 'PROTECTION_REVIEW', reason='STOP_LOST_WITH_OPEN_POSITION')
             return
-        if row['state'] in ('BE_CONFIRMED', 'SL_ONLY'):
-            return                         # SL_ONLY: no tpsl writes possible on this pair; just watch it
+        if row['state'] == 'BE_CONFIRMED':
+            return
         raw = port.position_raw or {}
         qty_now = D(pos['qty'])
         tp1_hit = qty_now < D(pintent.quantity)
@@ -1098,7 +1098,7 @@ class LiveExecutor:
         channel_req = any(e['event'] == 'CHANNEL_BE_REQUESTED' for e in self.store.events(cid, 80))
         trigger = ((tp1_hit or tp1_touched) and self.config.be_on_tp1) or move_pct >= self.config.be_move_pct \
             or channel_req
-        if mode == 'PARTIAL' and len(pintent.take_profits) == 2:
+        if mode == 'PARTIAL' and len(pintent.take_profits) == 2 and row['state'] != 'SL_ONLY':
             # F67: BE right AFTER the exchange closed the partial (SL then covers only the rest).
             # Safety net: price far beyond the partial level without a fill, or the channel asks for BE.
             trigger = tp1_hit or channel_req or move_pct >= 2 * self.config.be_move_pct
@@ -1106,6 +1106,15 @@ class LiveExecutor:
             return
         tick = D(plan['tick'])
         be, be_parts = self._be_target(raw, avg, qty_now, long, tick)
+        if row['state'] == 'SL_ONLY':
+            # F72: Bitunix refuses tpsl writes by API on this pair: tell the operator, once, the exact BE
+            # price to set by hand. No write is attempted.
+            if not any(e['event'] == 'BE_MANUAL_ALERT' for e in self.store.events(cid, 200)):
+                entry_ = D(pintent.entry)
+                be = max(be, entry_) if long else min(be, entry_)
+                self.store.event(cid, 'BE_MANUAL_ALERT', {'be': canon(be), 'move_pct': canon(move_pct),
+                                                          'roi_pct': canon(roi), 'mark_est': canon(mark)})
+            return
         entry = D(pintent.entry)
         be = max(be, entry) if long else min(be, entry)
         feasible = mark > be + tick if long else mark < be - tick

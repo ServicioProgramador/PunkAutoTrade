@@ -134,6 +134,10 @@ def message_for_event(store, ev):
         return ('⚠️ %s\nBitunix no permite poner TP ni mover el SL por API en este par.\n'
                 'La posición tiene el SL de la señal (%s). Poné el TP a mano en Bitunix.\n'
                 'Las próximas señales de este par no se van a abrir (7 días).' % (head, plan['sl']))
+    if e == 'BE_MANUAL_ALERT':
+        return ('🔔 Mové el SL a Break Even A MANO\n%s\nYa va %s %% a favor (ROI %s %%).\n'
+                'Poné el SL en <b>%s</b> en Bitunix (este par no permite hacerlo por API).'
+                % (head, _fmt(d.get('move_pct')).lstrip('+'), _fmt(d.get('roi_pct')).lstrip('+'), d.get('be')))
     if e == 'BE_CONFIRMED':
         return '🛡️ Stop movido a Break Even\n%s\nNuevo SL %s (sin pérdida si vuelve)' % (head, row['be_price'])
     if e in ('CLOSED', 'CLOSE_ATTRIBUTION'):
