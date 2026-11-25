@@ -116,7 +116,15 @@ def message_for_event(store, ev):
         d = {}
     e = ev['event']
     if e == 'PROTECTED':
-        tp = plan['tps'][-1] if (row.get('tp_mode') or plan.get('tp_mode')) == 'LAST' else ', '.join(plan['tps'])
+        if str(row['signal_id']).startswith('adopt:'):
+            return None        # F67b: a manual position already gets "🤝 Posición manual gestionada"
+        mode = row.get('tp_mode') or plan.get('tp_mode')
+        if mode == 'LAST':
+            tp = plan['tps'][-1]
+        elif mode == 'PARTIAL' and plan.get('partial_tp'):
+            tp = '%s %% en %s · resto en %s' % (plan.get('partial_pct', '75'), plan['partial_tp'], plan['tps'][-1])
+        else:
+            tp = ', '.join(plan['tps'])
         return ('✅ Operación abierta y protegida\n%s\nEntrada %s · Cantidad %s\nSL %s · TP %s\nMargen %s USDT'
                 % (head, plan['entry'], row['filled_qty'] or plan['qty'], plan['sl'], tp,
                    _fmt(plan.get('margin_usdt')).lstrip('+')))

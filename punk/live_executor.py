@@ -40,7 +40,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F66'
+BUILD = 'F67'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -127,8 +127,12 @@ class LiveConfig:
             raise LabBlocked('INVALID_LIVE_CONFIG')
         if not D('0') <= self.fee_rate < D('0.01'):
             raise LabBlocked('INVALID_FEE_RATE')
-        if self.tp_mode not in ('SPLIT', 'LAST'):
+        if self.tp_mode not in ('SPLIT', 'LAST', 'PARTIAL'):
             raise LabBlocked('INVALID_TP_MODE')
+        # F67: PARTIAL = close partial_pct % at be_move_pct % in favour (exchange TP), rest to the last target.
+        self.partial_pct = D(over.get('partial_pct', env('PA_LIVE_PARTIAL_PCT', get('live_partial_pct', '75'))))
+        if not D('10') <= self.partial_pct <= D('95'):
+            raise LabBlocked('INVALID_PARTIAL_PCT')
         if not D('0') <= self.be_profit_pct <= D('2'):
             raise LabBlocked('INVALID_BE_PROFIT_PCT')
         if self.be_stop_type not in ('LAST_PRICE', 'MARK_PRICE'):
@@ -291,7 +295,24 @@ def split_units(total, step, min_qty, n):
     return [canon(step * p) for p in parts]
 
 
+def partial_split(plan, filled):
+    """F67 PARTIAL: (partial_tp, last_tp), (pct % of filled, rest) in contract units.
+    None when the quantity cannot be split above the contract minimum."""
+    step, min_qty = D(plan['qty_step']), D(plan['min_qty'])
+    filled = D(filled)
+    first = (filled * D(plan.get('partial_pct', '75')) / 100 / step).to_integral_value(rounding=ROUND_FLOOR) * step
+    rest = filled - first
+    if first < min_qty or rest < min_qty:
+        return None
+    return [plan['partial_tp'], plan['tps'][-1]], [canon(first), canon(rest)]
+
+
 def protection_split(plan, filled, tp_mode='SPLIT'):
+    if tp_mode == 'PARTIAL':
+        split = partial_split(plan, filled) if plan.get('partial_tp') else None
+        if split is not None:
+            return split
+        tp_mode = 'LAST'                   # too small to split: one TP at the last target
     if tp_mode == 'LAST':
         # One exchange TP at the LAST target for the whole filled quantity.
         return [plan['tps'][-1]], [canon(filled)]
@@ -467,7 +488,7 @@ class LiveExecutor:
         if not 3 <= requested_lev <= 200:
             raise LabBlocked('INVALID_LEVERAGE')
         mode_tp = (tp_mode or cfg.tp_mode).upper()
-        if mode_tp not in ('SPLIT', 'LAST'):
+        if mode_tp not in ('SPLIT', 'LAST', 'PARTIAL'):
             raise LabBlocked('INVALID_TP_MODE')
         if not isinstance(signal_id, str) or not 1 <= len(signal_id) <= 80:
             raise LabBlocked('INVALID_SIGNAL_ID')
@@ -529,8 +550,22 @@ class LiveExecutor:
         loss = qty * abs(ref - D(sl)) + fee_reserve
         if loss > loss_limit:
             raise LabBlocked('SL_LOSS_ABOVE_LIMIT')
+        partial_tp, partial_note = None, ''
+        if mode_tp == 'PARTIAL':
+            long_ = side == 'LONG'
+            raw_tp = ref * (1 + cfg.be_move_pct / 100) if long_ else ref * (1 - cfg.be_move_pct / 100)
+            partial_tp = quantize(raw_tp, tick, ROUND_FLOOR if long_ else ROUND_CEILING)
+            last = D(tps[-1])
+            inside = (ref < D(partial_tp) < last) if long_ else (last < D(partial_tp) < ref)
+            probe = {'qty_step': canon(step), 'min_qty': canon(min_qty), 'partial_pct': canon(cfg.partial_pct),
+                     'partial_tp': partial_tp, 'tps': list(tps)}
+            if not inside or partial_split(probe, qty) is None:
+                partial_note = 'PARTIAL_NOT_POSSIBLE:' + ('LAST_TP_TOO_CLOSE' if not inside else 'QTY_TOO_SMALL')
+                mode_tp, partial_tp = 'LAST', None
         if mode_tp == 'LAST':
             tp_qtys = [canon(qty)]
+        elif mode_tp == 'PARTIAL':
+            tp_qtys = partial_split(probe, qty)[1]
         else:
             tp_qtys = split_units(qty, step, min_qty, len(tps))
             tps = tps[:len(tp_qtys)]
@@ -548,6 +583,10 @@ class LiveExecutor:
                 'qty_step': canon(step), 'tick': canon(tick), 'min_qty': canon(min_qty),
                 'payload': payload, 'planned_at': int(self.clock()), 'tp_mode': mode_tp,
                 'tp_dropped': len(signal.tps) - len(tps)}
+        if partial_tp:
+            plan.update({'partial_tp': partial_tp, 'partial_pct': canon(cfg.partial_pct)})
+        if partial_note:
+            plan['partial_note'] = partial_note
         existing = self.store.get(intent.client_id())
         if existing:
             if existing['fingerprint'] != intent.fingerprint():
@@ -959,6 +998,10 @@ class LiveExecutor:
         channel_req = any(e['event'] == 'CHANNEL_BE_REQUESTED' for e in self.store.events(cid, 80))
         trigger = ((tp1_hit or tp1_touched) and self.config.be_on_tp1) or move_pct >= self.config.be_move_pct \
             or channel_req
+        if mode == 'PARTIAL' and len(pintent.take_profits) == 2:
+            # F67: BE right AFTER the exchange closed the partial (SL then covers only the rest).
+            # Safety net: price far beyond the partial level without a fill, or the channel asks for BE.
+            trigger = tp1_hit or channel_req or move_pct >= 2 * self.config.be_move_pct
         if not trigger:
             return
         tick = D(plan['tick'])
@@ -1176,6 +1219,7 @@ class LiveExecutor:
                                 else plan['tp_qtys']),
                     'leverage': plan['leverage'], 'position_id': row['position_id'],
                     'be_state': row['be_state'], 'be_price': row['be_price'], 'tp_mode': row.get('tp_mode') or plan.get('tp_mode', ''),
+                    'partial_tp': plan.get('partial_tp', ''), 'partial_pct': plan.get('partial_pct', ''),
                     'blocking': row['state'] not in TERMINAL | SAFE_ACTIVE | IDLE}
         rows = self.store.all(200)
         return {'build': BUILD, 'trades': [self.status(r['client_id']) for r in rows[:50]],
@@ -1221,6 +1265,7 @@ def dashboard_payload(live):
                        'reason': r['reason'], 'qty': plan.get('qty'), 'filled_qty': r['filled_qty'],
                        'entry': plan.get('entry'), 'sl': plan.get('sl'), 'tps': plan.get('tps', []),
                        'tp_mode': r.get('tp_mode') or plan.get('tp_mode', ''),
+                       'partial_tp': plan.get('partial_tp', ''), 'partial_pct': plan.get('partial_pct', ''),
                        'leverage': plan.get('leverage'), 'margin_usdt': plan.get('margin_usdt'),
                        'max_loss_usdt': plan.get('max_loss_usdt'), 'be_state': r['be_state'],
                        'be_price': r['be_price'], 'position_id': r['position_id'],

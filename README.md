@@ -127,7 +127,7 @@ El número es el del mensaje del canal. El sistema hace los mismos chequeos que 
 | `--max-day` | `3` | Entradas por día (`AUTO` = sin límite) |
 | `--entry-policy` | `AUTO` | `AUTO`: a mercado si el precio está cerca de la entrada; si no, límite |
 | `--max-dev` | `0.3` | % de desvío máximo para entrar a mercado |
-| `--tp-mode` | `LAST` | `LAST`: un TP en el último objetivo; `SPLIT`: hasta 5 parciales |
+| `--tp-mode` | `LAST` | `LAST`: un TP en el último objetivo; `SPLIT`: hasta 5 parciales; `PARTIAL`: cierra 75 % al 1 % a favor y el resto al último objetivo |
 
 ## Por qué una señal puede no abrirse
 

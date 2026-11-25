@@ -108,7 +108,7 @@ def validate_arm(mode, max_open, max_per_day, entry_policy, max_entry_dev_pct, t
         raise LabBlocked('INVALID_ENTRY_POLICY')
     if not D('0') < D(max_entry_dev_pct) <= D('3'):
         raise LabBlocked('INVALID_ENTRY_DEVIATION')
-    if tp_mode not in ('SPLIT', 'LAST'):
+    if tp_mode not in ('SPLIT', 'LAST', 'PARTIAL'):
         raise LabBlocked('INVALID_TP_MODE')
 
 
