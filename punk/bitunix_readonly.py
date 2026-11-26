@@ -133,7 +133,8 @@ class ReadOnlyBitunix:
             raise ValueError('Contrato no encontrado')
         x = matches[0]
         return {k: x.get(k) for k in ('symbol', 'minTradeVolume', 'basePrecision', 'quotePrecision',
-                                      'minLeverage', 'maxLeverage', 'symbolStatus', 'isApiSupported')}
+                                      'minLeverage', 'maxLeverage', 'symbolStatus', 'isApiSupported',
+                                      'maxMarketOrderVolume', 'maxLimitOrderVolume')}
 
     def snapshot(self, symbol='BTCUSDT'):
         # Fail-closed: never report a partial set as reconciled.

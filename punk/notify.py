@@ -130,6 +130,9 @@ def message_for_event(store, ev):
         return ('✅ Operación abierta con SL y TP\n%s\nEntrada %s · Cantidad %s\nSL %s · TP %s\nMargen %s USDT'
                 % (head, plan['entry'], row['filled_qty'] or plan['qty'], plan['sl'], tp,
                    _fmt(plan.get('margin_usdt')).lstrip('+')))
+    if e == 'REJECTED_RESOLVED' and str(row.get('reason') or '').startswith('EXCHANGE_REJECTED:'):
+        return ('⏭️ Bitunix rechazó la entrada: <b>%s</b> %s\nCódigo %s: %s\nNo se abrió nada. El automático sigue armado.'
+                % (plan['symbol'], SIDE.get(plan['side'], ''), d.get('code'), d.get('message') or '-'))
     if e == 'SL_ONLY':
         return ('⚠️ %s\nBitunix no permite poner TP ni mover el SL por API en este par.\n'
                 'La posición tiene el SL de la señal (%s). Poné el TP a mano en Bitunix.\n'

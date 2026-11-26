@@ -20,6 +20,7 @@ Invariants:
 from __future__ import annotations
 
 import json
+import re
 import os
 import secrets
 import sqlite3
@@ -40,7 +41,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F72'
+BUILD = 'F74'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -164,6 +165,8 @@ class LiveStore:
               be_price TEXT NOT NULL DEFAULT '', tp_mode TEXT NOT NULL DEFAULT '',
               created_at INTEGER NOT NULL,
               updated_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS live_symbol_limits (
+              symbol TEXT PRIMARY KEY, max_qty TEXT NOT NULL, at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS live_symbol_flags (
               symbol TEXT PRIMARY KEY, flag TEXT NOT NULL, at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS live_leases (
@@ -262,6 +265,23 @@ class LiveStore:
 
     def release(self, client_id, owner):
         self._tx(lambda c: c.execute('DELETE FROM live_leases WHERE client_id=? AND owner=?', (client_id, owner)))
+
+    def last_event(self, client_id, name):
+        """F73b: the latest event of one kind, however many other events came after it."""
+        row = self._tx(lambda c: c.execute('SELECT * FROM live_events WHERE client_id=? AND event=? ORDER BY id DESC LIMIT 1',
+                                           (client_id, name)).fetchone())
+        return dict(row) if row else None
+
+    def set_max_qty(self, symbol, qty):
+        self._tx(lambda c: c.execute('INSERT OR REPLACE INTO live_symbol_limits(symbol,max_qty,at) VALUES(?,?,?)',
+                                     (symbol, str(qty), int(time.time()))))
+
+    def max_qty(self, symbol):
+        row = self._tx(lambda c: c.execute('SELECT max_qty FROM live_symbol_limits WHERE symbol=?', (symbol,)).fetchone())
+        try:
+            return Decimal(row['max_qty']) if row else None
+        except (InvalidOperation, ValueError):
+            return None
 
     def flag_symbol(self, symbol, flag):
         self._tx(lambda c: c.execute('INSERT OR REPLACE INTO live_symbol_flags(symbol,flag,at) VALUES(?,?,?)',
@@ -438,7 +458,16 @@ class LiveExecutor:
             raise LabBlocked('CONTRACT_METADATA_INVALID') from None
         if not (0 <= base_p <= 12 and 0 <= quote_p <= 12) or min_qty <= 0:
             raise LabBlocked('CONTRACT_METADATA_INVALID')
-        return {'step': Decimal(1).scaleb(-base_p), 'tick': Decimal(1).scaleb(-quote_p), 'min_qty': min_qty}
+        caps = {}
+        for kind, key in (('MARKET', 'maxMarketOrderVolume'), ('LIMIT', 'maxLimitOrderVolume')):
+            try:
+                v = Decimal(str(c.get(key)))
+                if v.is_finite() and v > 0:
+                    caps[kind] = v
+            except (InvalidOperation, ValueError, TypeError):
+                pass
+        return {'step': Decimal(1).scaleb(-base_p), 'tick': Decimal(1).scaleb(-quote_p), 'min_qty': min_qty,
+                'max_qty': caps}
 
     def _account_guard(self, snap, symbol, exclude=None):
         """Capital/exposure/slots + no unprotected foreign exposure."""
@@ -483,7 +512,8 @@ class LiveExecutor:
                     'pending_orders': len(ctx['snap']['pending_orders']), 'pending_tpsl': len(ctx['snap']['pending_tpsl'])}
         def contract():
             ctx['spec'] = self._contract(symbol)
-            return {k: canon(v) for k, v in ctx['spec'].items()}
+            return {k: ({kk: canon(vv) for kk, vv in v.items()} if isinstance(v, dict) else canon(v))
+                    for k, v in ctx['spec'].items()}
         def leverage():
             limits = PublicContractLimits(self.reader, margin_source=lambda: cfg.margin,
                                           leverage_source=lambda: cfg.leverage)(symbol)
@@ -589,6 +619,13 @@ class LiveExecutor:
         if not levels_ok_for(long, sl, ref, tps[0], market, entry_type, cfg.pending_limit):
             raise LabBlocked('LEVELS_INVALID_FOR_CURRENT_PRICE')
         qty = (cfg.margin * leverage / ref / step).to_integral_value(rounding=ROUND_DOWN) * step
+        # F74: maximum quantity per order (LIVE 2026-11-25 DRIFTUSDT: 30039 "maximum order quantity: 50000").
+        # From the contract when Bitunix publishes it, or learned from a previous 30039 rejection.
+        caps = [c for c in (spec.get('max_qty', {}).get(entry_type), self.store.max_qty(symbol)) if c]
+        qty_capped_from = None
+        if caps and qty > min(caps):
+            qty_capped_from = qty
+            qty = (min(caps) / step).to_integral_value(rounding=ROUND_DOWN) * step
         if qty < min_qty:
             raise LabBlocked('QTY_BELOW_CONTRACT_MINIMUM')
         notional = qty * ref
@@ -633,6 +670,8 @@ class LiveExecutor:
                 'qty_step': canon(step), 'tick': canon(tick), 'min_qty': canon(min_qty),
                 'payload': payload, 'planned_at': int(self.clock()), 'tp_mode': mode_tp,
                 'tp_dropped': len(signal.tps) - len(tps)}
+        if qty_capped_from is not None:
+            plan['qty_capped_from'] = canon(qty_capped_from)
         if partial_tp:
             plan.update({'partial_tp': partial_tp, 'partial_pct': canon(cfg.partial_pct), 'partial_at': partial_src})
         if partial_note:
@@ -828,6 +867,8 @@ class LiveExecutor:
             self.store.event(cid, 'ORDER_LOOKUP_NOT_CONFIRMED', {'reason': exc.reason, 'state': state})
             if state == 'ENTRY_ACK' and self.clock() - self._since(cid, 'ENTRY_ACK') > ACK_LOOKUP_GRACE:
                 self.store.transition(cid, ('ENTRY_ACK',), 'REVIEW', reason='ORDER_NOT_FOUND_AFTER_ACK')
+            elif state == 'ENTRY_REJECTED_UNCONFIRMED':
+                self._resolve_definitive_reject(row, plan)
             return
         except Exception as exc:
             self.store.event(cid, 'ORDER_LOOKUP_UNAVAILABLE', {'error': type(exc).__name__})
@@ -869,6 +910,32 @@ class LiveExecutor:
                                   detail={'status': status, 'filled': canon(filled)})
             return
         self.store.event(cid, 'ORDER_STATE_UNHANDLED', {'status': status})
+
+    def _resolve_definitive_reject(self, row, plan):
+        """F73: an entry REJECTED with HTTP 200 + a business code (LIVE 2026-11-25 DRIFTUSDT 30039) never
+        created an order. Confirmed by GET (Bitunix does not know our clientId and no open order carries
+        it) it is resolved at once, so it does not block nor disarm the automatic mode.
+        Transport failures (no JSON code, 4xx/5xx) are NOT definitive and keep the old path."""
+        cid = row['client_id']
+        ev = self.store.last_event(cid, 'ENTRY_REJECTED_UNCONFIRMED')
+        try:
+            out = json.loads(ev['detail']) if ev else {}
+        except ValueError:
+            out = {}
+        if out.get('http_status') != 200 or out.get('code') in (None, 0, '0'):
+            return
+        try:
+            snap = self._snapshot()
+        except Exception:
+            return
+        if any(str(o.get('clientId') or '') == cid for o in snap.get('pending_orders') or []):
+            return
+        m = re.search(r'maximum order quantity:\s*([0-9][0-9.]*)', str(out.get('message') or ''))
+        if str(out.get('code')) == '30039' and m:
+            self.store.set_max_qty(plan['symbol'], m.group(1))      # F74: next plan stays under it
+        self.store.transition(cid, ('ENTRY_REJECTED_UNCONFIRMED',), 'REJECTED_RESOLVED',
+                              reason='EXCHANGE_REJECTED:%s' % out.get('code'),
+                              detail={'code': out.get('code'), 'message': str(out.get('message') or '')[:160]})
 
     def _cancel(self, row, plan):
         out = self.trader.post('cancel_orders', {'symbol': plan['symbol'], 'orderList': [{'clientId': row['client_id']}]})
@@ -1019,8 +1086,8 @@ class LiveExecutor:
 
     def _api_unsupported(self, cid, port):
         posts = list(port.outcomes)
-        for e in self.store.events(cid, 20):
-            if e['event'] in ('F54_UNKNOWN_TP', 'PROTECTION_REVIEW'):
+        for e in [self.store.last_event(cid, 'F54_UNKNOWN_TP'), self.store.last_event(cid, 'PROTECTION_REVIEW')]:
+            if e:
                 try:
                     posts += json.loads(e['detail']).get('posts') or []
                 except ValueError:

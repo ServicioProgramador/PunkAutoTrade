@@ -233,6 +233,11 @@ class AutoTrader:
             except LabBlocked as exc:
                 self.auto.log(sid, 'EXECUTE_REFUSED', {**summary, 'reason': str(exc)})
                 return {'decision': 'EXECUTE_REFUSED', 'reason': str(exc)}
+            if result.get('state') == 'REJECTED_RESOLVED':
+                # F73: Bitunix refused the order (definitive business code): nothing was opened.
+                self.auto.log(sid, 'EXCHANGE_REFUSED', {**summary, 'state': result.get('state'),
+                                                        'reason': result.get('reason')})
+                return {'decision': 'EXCHANGE_REFUSED', **result}
             self.auto.log(sid, 'LIVE_SENT', {**summary, 'state': result.get('state'), 'reason': result.get('reason')})
             if result.get('blocking'):
                 self.disarm('BLOCKING_AFTER_' + plan['client_id'][-8:])

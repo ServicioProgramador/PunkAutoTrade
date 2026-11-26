@@ -8,10 +8,16 @@ try:
     rows = con.execute(
         'SELECT e.event, e.detail FROM live_events e JOIN live_trades t ON t.client_id = e.client_id '
         'WHERE t.symbol = ? ORDER BY e.id DESC LIMIT 12', (symbol,)).fetchall()
+    key = con.execute(
+        "SELECT e.event, e.detail FROM live_events e JOIN live_trades t ON t.client_id = e.client_id "
+        "WHERE t.symbol = ? AND e.event IN ('ENTRY_REJECTED_UNCONFIRMED','ENTRY_UNKNOWN','PROTECTION_REVIEW','REJECTED_RESOLVED') "
+        "ORDER BY e.id DESC LIMIT 4", (symbol,)).fetchall()
     trade = con.execute('SELECT client_id, state, reason, tp_mode FROM live_trades WHERE symbol = ? '
                         'ORDER BY rowid DESC LIMIT 1', (symbol,)).fetchone()
 finally:
     con.close()
 print('OPERACION', trade)
+for event, detail in key:
+    print('CLAVE', event, detail[:1500])
 for event, detail in rows:
     print(event, detail[:1500])
