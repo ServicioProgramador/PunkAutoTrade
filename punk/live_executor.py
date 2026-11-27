@@ -41,7 +41,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F74'
+BUILD = 'F75'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -843,6 +843,8 @@ class LiveExecutor:
             self._reconcile_entry(row, plan)
             row = self.store.get(client_id)
             state = row['state']
+        if state == 'PROTECTION_REVIEW' and row['position_id'] and self._closed_while_in_review(row, plan):
+            return self.status(client_id)
         if state in ('PROTECTING', 'PROTECTION_REVIEW'):
             self._protect(row, plan)
             row = self.store.get(client_id)
@@ -1121,6 +1123,23 @@ class LiveExecutor:
                     'profit_pct': canon(self.config.be_profit_pct), 'stop_type': self.config.be_stop_type,
                     'expected_net_usdt': canon((abs(be - avg) - avg * fee) * qty - paid)}
 
+    def _stop_ok_marked(self, cid):
+        a, b = self.store.last_event(cid, 'STOP_MISSING_SEEN'), self.store.last_event(cid, 'STOP_SEEN_OK')
+        return b is not None and a is not None and b['id'] > a['id']
+
+    def _closed_while_in_review(self, row, plan):
+        """F75: a reviewed trade whose position is gone on Bitunix is CLOSED (GET-confirmed), with its result."""
+        try:
+            snap = self._port(_intent_from_plan(plan, protection=True, filled=row['filled_qty'] or plan['qty'],
+                                                tp_mode=row.get('tp_mode') or 'SPLIT')).snapshot()
+        except (TimeoutError, LabBlocked):
+            return False
+        if snap.get('position') is not None:
+            return False
+        self.store.transition(row['client_id'], ('PROTECTION_REVIEW',), 'CLOSED', reason='POSITION_ABSENT_GET',
+                              detail=self._close_attribution(row, plan))
+        return True
+
     def _supervise(self, row, plan):
         cid = row['client_id']
         mode = self._tp_mode(row, plan)
@@ -1141,8 +1160,18 @@ class LiveExecutor:
             return
         stop = snap.get('stop')
         if not stop or stop.get('ambiguous'):
+            # F75: while the SL itself is executing, Bitunix removes the stop a moment before the position
+            # (LIVE 2026-11-27 AVAXUSDT: closed in profit at BE, flagged "a revisar", auto disarmed).
+            # Confirm on the next cycle; nothing could be done automatically in between anyway.
+            last = self.store.last_event(cid, 'STOP_MISSING_SEEN')
+            last_ok = self.store.last_event(cid, 'STOP_SEEN_OK')
+            if last is None or (last_ok is not None and last_ok['id'] > last['id']):
+                self.store.event(cid, 'STOP_MISSING_SEEN', {'qty': pos['qty']})
+                return
             self.store.transition(cid, None, 'PROTECTION_REVIEW', reason='STOP_LOST_WITH_OPEN_POSITION')
             return
+        if self.store.last_event(cid, 'STOP_MISSING_SEEN') and not self._stop_ok_marked(cid):
+            self.store.event(cid, 'STOP_SEEN_OK', {})
         if row['state'] == 'BE_CONFIRMED':
             return
         raw = port.position_raw or {}
