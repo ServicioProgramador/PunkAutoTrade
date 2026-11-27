@@ -123,6 +123,8 @@ def message_for_event(store, ev):
         mode = row.get('tp_mode') or plan.get('tp_mode')
         if mode == 'LAST':
             tp = plan['tps'][-1]
+        elif mode == 'FIRST' and plan.get('partial_tp'):
+            tp = '%s (100 %%)' % plan['partial_tp']
         elif mode == 'PARTIAL' and plan.get('partial_tp'):
             tp = '%s %% en %s · resto en %s' % (plan.get('partial_pct', '75'), plan['partial_tp'], plan['tps'][-1])
         else:
@@ -192,7 +194,7 @@ def message_for_decision(dec):
              'el precio ya pasó el SL de la señal'}
     if k == 'ADOPTED':
         tp = ('75 %% en %s · resto en %s (de la señal)' % (d.get('partial_tp'), d.get('tp'))
-              if d.get('tp_mode') == 'PARTIAL' else '%s%s' % (d.get('tp'), ' (el tuyo)' if d.get('own_tp') else ' (de la señal)'))
+              if d.get('tp_mode') == 'PARTIAL' else ('%s (100 %%, de la señal)' % d.get('tp')) if d.get('tp_mode') == 'FIRST' else '%s%s' % (d.get('tp'), ' (el tuyo)' if d.get('own_tp') else ' (de la señal)'))
         return ('🤝 Posición manual gestionada: <b>%s</b> %s\nSL %s%s · TP %s\nBreak Even automático activado'
                 % (d.get('symbol'), SIDE.get(d.get('side'), ''), d.get('sl'), ' (el tuyo)' if d.get('own_sl') else ' (de la señal)', tp))
     if k == 'ADOPT_SKIPPED':

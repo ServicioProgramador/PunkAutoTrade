@@ -51,7 +51,7 @@ def main():
     g.add_argument('--notify-test', action='store_true', help='Enviar un mensaje de prueba a tu Telegram')
     g.add_argument('--entry-policy', default='AUTO', choices=('AUTO', 'LIMIT', 'MARKET'), help='AUTO: MARKET si el precio esta a <= --max-dev %% de la entrada, si no LIMIT')
     g.add_argument('--max-dev', default='0.3', help='Automatico: desvio maximo %% para entrar a MARKET en politica AUTO')
-    g.add_argument('--tp-mode', default='LAST', choices=('LAST', 'SPLIT', 'PARTIAL'), help='LAST: un TP en el ultimo objetivo; SPLIT: hasta 5 TP parciales; PARTIAL: cierra 75%% al 1%% a favor y el resto al ultimo objetivo')
+    g.add_argument('--tp-mode', default='LAST', choices=('LAST', 'SPLIT', 'PARTIAL', 'FIRST'), help='LAST: un TP en el ultimo objetivo; SPLIT: hasta 5 TP parciales; PARTIAL: 75%% al TP1/1%% y el resto al ultimo; FIRST: 100%% al TP1 o al 1%% (lo que llegue primero)')
     g.add_argument('--live-auto', action='store_true', help='Con --telegram y --live-supervise: ejecutar senales nuevas segun el armado')
     g.add_argument('--live-supervise', action='store_true', help='Con el dashboard: supervisar operaciones LIVE existentes (protecciones y BE)')
     p.add_argument('--f55-contract-lab', action='store_true', help='F55 validar contratos SL/TP/BE y lectura GET local; sin LIVE')

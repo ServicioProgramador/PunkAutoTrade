@@ -41,7 +41,7 @@ from punk.f54_protection_cycle import F54ProtectionCycle
 from punk.live_write_lab import Intent, LabBlocked
 from punk.risk_config import ConfigurationError, PublicContractLimits, effective_leverage
 
-BUILD = 'F75'
+BUILD = 'F77'
 # F64: channel tickers that are named differently on Bitunix (LIVE 2026-11-24: #RAYSOL/USDT).
 SYMBOL_ALIASES = {'RAYSOLUSDT': 'RAYUSDT'}
 TERMINAL = frozenset({'CLOSED', 'CANCELED', 'REJECTED_RESOLVED', 'ABORTED_BEFORE_ENTRY', 'PLAN_EXPIRED',
@@ -92,7 +92,18 @@ class LiveConfig:
         self.max_positions = int(over.get('max_positions', get('max_positions', '3')))
         self.max_exposure = D(over.get('max_exposure_usdt', get('max_exposure_usdt', '300')))
         self.max_loss = D(over.get('max_loss_usdt', get('max_loss_usdt', '5')))
+        if hasattr(self, 'tp_mode'):
+            self._load_strategy()        # F77: the dashboard preset applies without restarting
         return self
+
+    def _load_strategy(self):
+        """BE trigger and first-TP level. F77 precedence: explicit override > dashboard preset (settings
+        table) > .env > default. BE trigger = favorable PRICE move in % (1 % = 20 % ROI at 20x)."""
+        repo, over, env = self._repo, self._over, os.environ.get
+        get = (lambda k: repo.setting(k, '')) if repo is not None else (lambda k: '')
+        self.be_move_pct = D(over.get('be_move_pct') or get('live_be_move_pct') or env('PA_LIVE_BE_MOVE_PCT') or '1')
+        # F76: first TP level (PARTIAL 75 % / FIRST 100 %), separate from the BE trigger.
+        self.tp_pct = D(over.get('tp_pct') or get('live_tp_pct') or env('PA_LIVE_TP_PCT') or self.be_move_pct)
 
     def __init__(self, repo=None, **over):
         get = (lambda k, d: repo.setting(k, d)) if repo is not None else (lambda k, d: d)
@@ -102,7 +113,7 @@ class LiveConfig:
         self.fee_rate = D(over.get('fee_rate', env('PA_LIVE_FEE_RATE', get('live_fee_rate', '0.0006'))))
         # BE trigger = favorable PRICE move from the average entry, in % (user rule:
         # 1% move == 1% x leverage ROI, e.g. 20% ROI at 20x), or TP1 touched.
-        self.be_move_pct = D(over.get('be_move_pct', env('PA_LIVE_BE_MOVE_PCT', get('live_be_move_pct', '1'))))
+        self._load_strategy()
         # F63: extra profit locked by the BE stop, in % of price, ON TOP of the fees already
         # paid (open fee + funding, read from Bitunix) and the estimated close fee.
         self.be_profit_pct = D(over.get('be_profit_pct', env('PA_LIVE_BE_PROFIT_PCT', get('live_be_profit_pct', '0.1'))))
@@ -134,10 +145,12 @@ class LiveConfig:
             raise LabBlocked('INVALID_LIVE_CONFIG')
         if not D('0') <= self.fee_rate < D('0.01'):
             raise LabBlocked('INVALID_FEE_RATE')
-        if self.tp_mode not in ('SPLIT', 'LAST', 'PARTIAL'):
+        if self.tp_mode not in ('SPLIT', 'LAST', 'PARTIAL', 'FIRST'):
             raise LabBlocked('INVALID_TP_MODE')
         # F67: PARTIAL = close partial_pct % at be_move_pct % in favour (exchange TP), rest to the last target.
         self.partial_pct = D(over.get('partial_pct', env('PA_LIVE_PARTIAL_PCT', get('live_partial_pct', '75'))))
+        if not D('0.05') <= self.tp_pct <= D('1000'):
+            raise LabBlocked('INVALID_TP_PCT')
         if not D('10') <= self.partial_pct <= D('95'):
             raise LabBlocked('INVALID_PARTIAL_PCT')
         if not D('0') <= self.be_profit_pct <= D('2'):
@@ -355,7 +368,7 @@ def partial_level(long, ref, tp1, cfg, tick):
     """F69: the partial closes at whatever comes FIRST: the signal's TP1 or be_move_pct % in favour.
     TP1 is only used if it is beyond the fee cover (2 x fee + BE profit %), so the 75 % never closes
     at a loss or flat."""
-    move = cfg.be_move_pct / 100
+    move = getattr(cfg, 'tp_pct', cfg.be_move_pct) / 100
     pct_level = D(quantize(ref * (1 + move) if long else ref * (1 - move), tick, ROUND_FLOOR if long else ROUND_CEILING))
     cover = 2 * cfg.fee_rate + cfg.be_profit_pct / 100
     floor_ = ref * (1 + cover) if long else ref * (1 - cover)
@@ -379,6 +392,10 @@ def partial_split(plan, filled):
 
 
 def protection_split(plan, filled, tp_mode='SPLIT'):
+    if tp_mode == 'FIRST':
+        if plan.get('partial_tp'):
+            return [plan['partial_tp']], [canon(D(filled))]
+        tp_mode = 'LAST'
     if tp_mode == 'PARTIAL':
         split = partial_split(plan, filled) if plan.get('partial_tp') else None
         if split is not None:
@@ -569,7 +586,7 @@ class LiveExecutor:
         if not 3 <= requested_lev <= 200:
             raise LabBlocked('INVALID_LEVERAGE')
         mode_tp = (tp_mode or cfg.tp_mode).upper()
-        if mode_tp not in ('SPLIT', 'LAST', 'PARTIAL'):
+        if mode_tp not in ('SPLIT', 'LAST', 'PARTIAL', 'FIRST'):
             raise LabBlocked('INVALID_TP_MODE')
         if not isinstance(signal_id, str) or not 1 <= len(signal_id) <= 80:
             raise LabBlocked('INVALID_SIGNAL_ID')
@@ -649,7 +666,15 @@ class LiveExecutor:
             if not inside or partial_split(probe, qty) is None:
                 partial_note = 'PARTIAL_NOT_POSSIBLE:' + ('LAST_TP_TOO_CLOSE' if not inside else 'QTY_TOO_SMALL')
                 mode_tp, partial_tp = 'LAST', None
-        if mode_tp == 'LAST':
+        if mode_tp == 'FIRST':
+            # F76: 100 % at whatever comes first: the signal TP1 or tp_pct % in favour.
+            long_ = side == 'LONG'
+            partial_tp, partial_src = partial_level(long_, ref, tps[0], cfg, tick)
+            last = D(tps[-1])
+            if not ((ref < D(partial_tp) <= last) if long_ else (last <= D(partial_tp) < ref)):
+                partial_note = 'FIRST_NOT_POSSIBLE:LAST_TP_TOO_CLOSE'
+                mode_tp, partial_tp = 'LAST', None
+        if mode_tp in ('LAST', 'FIRST'):
             tp_qtys = [canon(qty)]
         elif mode_tp == 'PARTIAL':
             tp_qtys = partial_split(probe, qty)[1]
@@ -673,7 +698,8 @@ class LiveExecutor:
         if qty_capped_from is not None:
             plan['qty_capped_from'] = canon(qty_capped_from)
         if partial_tp:
-            plan.update({'partial_tp': partial_tp, 'partial_pct': canon(cfg.partial_pct), 'partial_at': partial_src})
+            plan.update({'partial_tp': partial_tp, 'partial_at': partial_src,
+                         'partial_pct': '100' if mode_tp == 'FIRST' else canon(cfg.partial_pct)})
         if partial_note:
             plan['partial_note'] = partial_note
         existing = self.store.get(intent.client_id())
@@ -808,6 +834,11 @@ class LiveExecutor:
 
     def reconcile_all(self):
         out = []
+        if hasattr(self.config, 'reload_capital'):
+            try:
+                self.config.reload_capital()     # F77: BE trigger / TP level from the dashboard preset
+            except LabBlocked:
+                pass
         try:
             self.backfill_close_attribution()
         except Exception:
@@ -961,6 +992,8 @@ class LiveExecutor:
             close = D(item.get('closePrice'))
             be = D(row['be_price']) if row.get('be_price') else None
             sl, tp_last = D(plan['sl']), D(plan['tps'][-1])
+            if (row.get('tp_mode') or plan.get('tp_mode')) == 'FIRST' and plan.get('partial_tp'):
+                tp_last = D(plan['partial_tp'])          # F76: the only TP
             long = plan['side'] == 'LONG'
             partial = self._partial_filled(row, plan)
             if partial is not None:
@@ -1341,6 +1374,11 @@ class LiveExecutor:
         loss = qty * abs(avg - D(sl))
         # F68: PARTIAL for manual positions too, when the operator did not set his own TP.
         mode, extra, tp_qtys = 'LAST', {}, [canon(qty)]
+        if tp_mode == 'FIRST' and not tps and sig is not None:
+            ptp, psrc = partial_level(long, avg, levels[0], self.config, tick)
+            if (market < D(ptp) <= D(levels[-1])) if long else (D(levels[-1]) <= D(ptp) < market):
+                mode = 'FIRST'
+                extra = {'partial_tp': ptp, 'partial_pct': '100', 'partial_at': psrc}
         if tp_mode == 'PARTIAL' and not tps and sig is not None:
             ptp, psrc = partial_level(long, avg, levels[0], self.config, tick)
             ahead = (market < D(ptp) < D(levels[-1])) if long else (D(levels[-1]) < D(ptp) < market)
@@ -1368,7 +1406,8 @@ class LiveExecutor:
         self.store.transition(cid, ('PLANNED',), 'PROTECTING', event='ADOPTED', filled_qty=canon(qty),
                               tp_mode=mode, detail={'signal': sig_id, 'own_sl': bool(stops), 'own_tp': bool(tps)})
         st = self.reconcile(cid)
-        return 'ADOPTED', {'client_id': cid, 'signal': sig_id, 'sl': sl, 'tp': levels[-1], 'tp_mode': mode,
+        return 'ADOPTED', {'client_id': cid, 'signal': sig_id, 'sl': sl,
+                           'tp': extra.get('partial_tp') if mode == 'FIRST' else levels[-1], 'tp_mode': mode,
                            'partial_tp': extra.get('partial_tp', ''),
                            'own_sl': bool(stops), 'own_tp': bool(tps), 'state': st.get('state')}
 
@@ -1454,6 +1493,15 @@ class LiveExecutor:
                 'blocking': [r['client_id'] for r in self.store.blocking()]}
 
 
+def _strategy_view(live):
+    try:
+        from punk.strategy_presets import current, public
+        repo = getattr(live.config, '_repo', None)
+        return {'presets': public(), 'current': current(repo) if repo is not None else {}}
+    except Exception:
+        return {'presets': [], 'current': {}}
+
+
 def dashboard_payload(live):
     """Read-only view for the dashboard (SQLite only, no network)."""
     if live is None:
@@ -1504,4 +1552,7 @@ def dashboard_payload(live):
     return {'build': BUILD, 'status': 'OK', 'supervised': hasattr(live, 'reconcile_all'),
             'trades': trades, 'blocking': [r['client_id'] for r in store.blocking()],
             'summary': {'active': len(active), 'closed_today': closed_today, 'pnl_today': str(pnl_today),
-                        'wins_today': wins, 'losses_today': losses, 'draws_today': draws}}
+                        'wins_today': wins, 'losses_today': losses, 'draws_today': draws},
+            'strategy': _strategy_view(live),
+            'config': {'be_move_pct': canon(live.config.be_move_pct), 'tp_pct': canon(live.config.tp_pct),
+                       'fee_rate': canon(live.config.fee_rate), 'be_profit_pct': canon(live.config.be_profit_pct)}}

@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-BUILD = 'F75'
+BUILD = 'F77'
 
 
 def create_server(engine, host='127.0.0.1', port=8766, integration=None, monitor=None, feed=None, live=None, auto=None):
@@ -86,7 +86,7 @@ def create_server(engine, host='127.0.0.1', port=8766, integration=None, monitor
 
         def do_POST(self):
             route = urlsplit(self.path).path
-            if route not in ('/api/settings', '/api/live/disarm'):
+            if route not in ('/api/settings', '/api/live/disarm', '/api/live/strategy'):
                 self.send_error(404); return
             # bind to loopback and require a per-process token from /api/status
             # plus same-origin check to reject cross-site form submission.
@@ -98,6 +98,26 @@ def create_server(engine, host='127.0.0.1', port=8766, integration=None, monitor
                 self.send_error(403); return
             if self.headers.get('Content-Type','').split(';')[0].strip()!='application/json':
                 self.send_error(415); return
+            if route == '/api/live/strategy':
+                # F77: how trades are managed (TP mode / BE). Never arms, never touches open positions.
+                store = live.store if hasattr(live, 'store') else live
+                try:
+                    size=int(self.headers.get('Content-Length','0'))
+                    if not 1<=size<=256: raise ValueError('BAD_SIZE')
+                    body=json.loads(self.rfile.read(size))
+                    from punk.strategy_presets import apply
+                    from punk.live_auto import AutoStore
+                    cur=apply(engine.repo, AutoStore(store) if store is not None else None, body.get('preset'))
+                    result,code={'status':'SAVED','strategy':cur},200
+                except (ValueError,TypeError,AttributeError,json.JSONDecodeError) as exc:
+                    result,code={'status':'REJECTED','reason':str(exc)[:64]},400
+                raw=json.dumps(result).encode('utf-8')
+                self.send_response(code)
+                self.send_header('Content-Type','application/json; charset=utf-8')
+                self.send_header('Cache-Control','no-store')
+                self.send_header('Content-Length',str(len(raw)))
+                self.end_headers();self.wfile.write(raw)
+                return
             if route == '/api/live/disarm':
                 # Kill switch: the dashboard can only DISARM, never arm.
                 store = live.store if hasattr(live, 'store') else live
